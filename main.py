@@ -27,12 +27,13 @@ torch.manual_seed(args.seed)
 device = torch.device("cuda" if args.cuda else "cpu")
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
+
 train_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('../data', train=True, download=True,
+    datasets.MNIST('./data', train=True, download=True,
                    transform=transforms.ToTensor()),
     batch_size=args.batch_size, shuffle=True, **kwargs)
 test_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('../data', train=False, transform=transforms.ToTensor()),
+    datasets.MNIST('./data', train=False, transform=transforms.ToTensor()),
     batch_size=args.batch_size, shuffle=True, **kwargs)
 
 
@@ -127,8 +128,13 @@ def test(epoch):
     test_loss /= len(test_loader.dataset)
     print('====> Test set loss: {:.4f}'.format(test_loss))
 
+
+
+
 if __name__ == "__main__":
     
+
+    """
     for epoch in range(1, args.epochs + 1):
         train(epoch)
         #torch.save(model.state_dict(), '/media/hsy/VariationalAutoEncoder/weight.pt')
@@ -141,7 +147,7 @@ if __name__ == "__main__":
             save_image(sample.view(64, 1, 28, 28),
                        'results/sample_' + str(epoch) + '.png')
     
-    
+    """
 
     """
     model.load_state_dict(torch.load('/media/hsy/VariationalAutoEncoder/weight.pt', map_location=device))
