@@ -33,43 +33,50 @@ train_data, val_data = torch.utils.data.random_split(train_set, [int(0.95*len(tr
 test_data = datasets.MNIST('./data/train/', train=False, transform=transforms.ToTensor())
 
 train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, **kwargs)
-val_lodaer = torch.utils.data.DataLoader(val_data), batch_size=args.batch_size, shuffle=True, **kwargs)
+val_lodaer = torch.utils.data.DataLoader(val_data, batch_size=args.batch_size, shuffle=True, **kwargs)
 test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.batch_size, shuffle=True, **kwargs)
 
-class VAE(nn.Module):
+class DeepCAMA(nn.Module):
     def __init__(self):
-        super(VAE, self).__init__()
+        super(DeepCAMA, self).__init__()
 
-        self.fc1 = nn.Linear(784, 400)
-        self.fc4 = nn.Linear(400, 784)
-        self.fc21 = nn.Linear(400, 20)
-        self.fc22 = nn.Linear(400, 20)
-        self.fc3 = nn.Linear(20, 400)
-
-
-    def encode(self, x):
-        h1 = F.relu(self.fc1(x))
-        return self.fc21(h1), self.fc22(h1)
-
-    def reparameterize(self, mu, logvar):
-        std = torch.exp(0.5*logvar)
-        eps = torch.randn_like(std)
-        return mu + eps*std
-
-    def decode(self, z):
-        h3 = F.relu(self.fc3(z))
-        return torch.sigmoid(self.fc4(h3))
-
+        #network for q(m|x)
+        self.qmx_conv1 = nn.Conv2d(in_channels=1, out_channels=64, kernel_size=(3,3), stride=1, padding='same')
+        self.qmx_conv2 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(3,3), stride=1, padding='same')
+        self.qmx_conv3 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(3,3), stride=1, padding='same')
+        self.qmx_fc1 = nn.Linear(1024,500, bias=True)
+        self.qmx_fc21 = nn.Linear(500,32, bias=True)
+        self.qmx_fc22 = nn.Linear(500,32, bias=True)
+    
     def forward(self, x):
-        mu, logvar = self.encode(x.view(-1, 784))
-        print('mu is ')
-        print(mu)
-        print('logvar is ')
-        print(logvar)
-        z = self.reparameterize(mu, logvar)
-        return self.decode(z), mu, logvar
 
+        #q(m|x)
+        """
+        print(x.size())
+        a = self.qmx_conv1(x)
+        a = F.max_pool2d(a,2)
+        print(a.size())
+        b = self.qmx_conv2(a)
+        b = F.max_pool2d(b,2)
+        print(b.size())
+        c = self.qmx_conv3(b)
+        c = F.max_pool2d(c,2,padding = 1)
+        print(c.size())
+        d = torch.flatten(c)
+        print(d.size())
+        d2 = self.qmx_fc1(d)
+        print(d2.size())
+        e = self.qmx_fc21(d2)
+        f = self.qmx_fc22(d2)
+        print(e.size())
+        print(f.size())
+        """
 
+        return 
+model = DeepCAMA().to(device)
+x = torch.ones((1,1,28,28)).to(device)
+model(x)
+"""
 model = VAE().to(device)
 optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
