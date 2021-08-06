@@ -28,14 +28,13 @@ device = torch.device("cuda" if args.cuda else "cpu")
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
-train_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('./data', train=True, download=True,
-                   transform=transforms.ToTensor()),
-    batch_size=args.batch_size, shuffle=True, **kwargs)
-test_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('./data', train=False, transform=transforms.ToTensor()),
-    batch_size=args.batch_size, shuffle=True, **kwargs)
+train_set = datasets.MNIST('./data/train/', train=True, download=True, transform=transforms.ToTensor())
+train_data, val_data = torch.utils.data.random_split(train_set, [int(0.95*len(train_set)),int(0.05*len(train_set))], generator=torch.Generator().manual_seed(42))
+test_data = datasets.MNIST('./data/train/', train=False, transform=transforms.ToTensor())
 
+train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, **kwargs)
+val_lodaer = torch.utils.data.DataLoader(val_data), batch_size=args.batch_size, shuffle=True, **kwargs)
+test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.batch_size, shuffle=True, **kwargs)
 
 class VAE(nn.Module):
     def __init__(self):
@@ -134,7 +133,6 @@ def test(epoch):
 if __name__ == "__main__":
     
 
-    """
     for epoch in range(1, args.epochs + 1):
         train(epoch)
         #torch.save(model.state_dict(), '/media/hsy/VariationalAutoEncoder/weight.pt')
@@ -147,9 +145,7 @@ if __name__ == "__main__":
             save_image(sample.view(64, 1, 28, 28),
                        'results/sample_' + str(epoch) + '.png')
     
-    """
 
-    """
     model.load_state_dict(torch.load('/media/hsy/VariationalAutoEncoder/weight.pt', map_location=device))
     model.eval()
     a = next(iter(test_loader)) 
@@ -169,5 +165,4 @@ if __name__ == "__main__":
         s = 'recon' + str(i) + '.png'
         save_image(recon_batch.view(1,28,28),s)
 
-    """
-                
+"""
