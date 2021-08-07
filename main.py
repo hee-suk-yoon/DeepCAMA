@@ -44,11 +44,39 @@ class DeepCAMA(nn.Module):
         self.qmx_conv1 = nn.Conv2d(in_channels=1, out_channels=64, kernel_size=(3,3), stride=1, padding='same')
         self.qmx_conv2 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(3,3), stride=1, padding='same')
         self.qmx_conv3 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(3,3), stride=1, padding='same')
-        self.qmx_fc1 = nn.Linear(1024,500, bias=True)
-        self.qmx_fc21 = nn.Linear(500,32, bias=True)
-        self.qmx_fc22 = nn.Linear(500,32, bias=True)
+        self.qmx_fc1 = nn.Linear(1024,500)
+        self.qmx_fc21 = nn.Linear(500,32)
+        self.qmx_fc22 = nn.Linear(500,32)
     
-    def forward(self, x):
+        #network for q(z|x,y,m)
+        self.qzxym_conv1 = nn.Conv2d(in_channels=1, out_channels=64, kernel_size=(5,5), stride=1, padding='same')
+        self.qzxym_conv2 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(5,5), stride=1, padding='same')
+        self.qzxym_conv3 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(5,5), stride=1, padding='same')
+        self.qzxym_fc1 = nn.Linear(1024,500)
+        self.qzxym_fc2 = nn.Linear(500+10+32, 500)
+        self.qzxym_fc31 = nn.Linear(500,64)
+        self.qzxym_fc32 = nn.Linear(500,64)
+
+        #network for p(x|y,z,m)
+        self.p_fc1 = nn.Linear(10,500)
+        self.p_fc2 = nn.Linear(500,500)
+        self.p_fc3 = nn.Linear(64,500)
+        self.p_fc4 = nn.Linear(500,500)
+        self.p_fc5 = nn.Linear(32,500)
+        self.p_fc6 = nn.Linear(500,500)
+        self.p_fc7 = nn.Linear(500,500)
+        self.p_fc8 = nn.Linear(500,500)
+        self.p_projection = nn.Linear(1500,4*4*64,bias=False)
+        self.deconv1 = nn.ConvTranspose2d(in_channels=64,out_channels=64,kernel_size=3,padding=1,output_padding=0,stride=2)
+        self.deconv2 = nn.ConvTranspose2d(in_channels=64,out_channels=64,kernel_size=3,padding=1,output_padding=1,stride=2)
+        self.deconv3 = nn.ConvTranspose2d(in_channels=64,out_channels=1,kernel_size=3,padding=1,output_padding=1,stride=2)
+    
+    def reparameterize(self, mu, logvar):
+        std = torch.exp(0.5*logvar)
+        eps = torch.randn_like(std)
+        return mu + eps*std
+        
+    def forward(self, y, z, m):
 
         #q(m|x)
         """
@@ -72,10 +100,56 @@ class DeepCAMA(nn.Module):
         print(f.size())
         """
 
+        #(q(z|x,y,m))
+        """
+        a = self.qzxym_conv1(x)
+        a = F.max_pool2d(a,2)
+        b = self.qzxym_conv2(a)
+        b = F.max_pool2d(b,2)
+        c = self.qzxym_conv3(b)
+        c = F.max_pool2d(c,2)
+        d = torch.flatten(c)
+        d2 = self.qzxym_fc1(d)
+        print(d2.size())
+        e = torch.cat((d2,y,m))
+        print(e.size())
+        f = self.qzxym_fc2(e)
+        g1 = self.qzxym_fc31(f)
+        g2 = self.qzxym_fc32(f)
+        print(g1.size())
+        """
+        #p(x|y,z,m)
+        """
+        a = self.p_fc1(y)
+        b = self.p_fc2(a)
+
+        c = self.p_fc3(z)
+        d = self.p_fc4(c)
+
+        e = self.p_fc5(m)
+        f = self.p_fc6(e)
+        g = self.p_fc7(f)
+        h = self.p_fc8(g)
+
+        i = torch.cat((b,d,h))
+        print(i.size())
+        i = self.p_projection(i)
+        j = i.reshape(1,64,4,4)
+        print(j.size())
+        k = self.deconv1(j)
+        print(k.size())
+        k2 = self.deconv2(k)
+        print(k2.size())
+        k3 = self.deconv3(k2)
+        print(k3.size())
+        """
         return 
 model = DeepCAMA().to(device)
 x = torch.ones((1,1,28,28)).to(device)
-model(x)
+y = torch.ones(10).to(device)
+m = torch.ones(32).to(device)
+z = torch.ones(64).to(device)
+model(y,m,z)
 """
 model = VAE().to(device)
 optimizer = optim.Adam(model.parameters(), lr=1e-3)
