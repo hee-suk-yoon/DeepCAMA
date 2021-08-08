@@ -133,22 +133,26 @@ class DeepCAMA(nn.Module):
         print('size of decode i is ' + str(i.size()))
         i = F.relu(self.p_projection(i))
         print('size of decode i is ' + str(i.size()))
-        j = i.reshape(args.batch_size,64,4,4)
+        #j = i.reshape(args.batch_size,64,4,4)
+        j = i.reshape(-1,64,4,4)
         k = F.relu(self.deconv1(j))
         k2 = F.relu(self.deconv2(k))
         return torch.sigmoid(self.deconv3(k2)) 
 
-    def forward(self, x,y):
+    def forward(self, x,y, manipulated):
         #x shape -> (#batch, channels=1, width, height)
         #y shape -> (#batch)
-        y = y.view(args.batch_size,-1) #y shape -> (#batch, 1(which is the label))
-        y = F.one_hot(y,num_classes=10).view(args.batch_size,10) #y shape -> (#batch, 10)
+        y = y.view(-1,1) #y shape -> (#batch, 1(which is the label))
+        y = F.one_hot(y,num_classes=10).view(-1,10) #y shape -> (#batch, 10)
         y = y.to(torch.float32)
         print('size of y is ' + str(y.size()))
         #q(m|x)
         mu_q2, logvar_q2 = self.encode2(x)
         print('size of mu_q2 is ' + str(mu_q2.size()))
         m = self.reparameterize(mu_q2, logvar_q2)
+        if not manipulated:
+            m = m.zero_()
+
         print('size of m is ' + str(m.size()))
         #(q(z|x,y,m))
         mu_q1, logvar_q1 = self.encode1(x,y,m)
@@ -190,12 +194,24 @@ def loss_function(recon_x, x, y, mu_q1, logvar_q1, mu_q2, logvar_q2):
 
 def train(epoch):
     model.eval()
+    train_loss = 0
     for batch_id,  (data,y) in enumerate(train_loader):
         data = data.to(device)
         y = y.to(device)
         optimizer.zero_grad()
-        x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(data)
-        loss = loss_function(x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2)
+        x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(data,y,manipulated=False)
+        loss = loss_function(x_recon, data, y, mu_q1, logvar_q1, mu_q2, logvar_q2)
+        loss.backward()
+        train_loss += loss.item()
+        optimizer.step()
+        if batch_id % args.log_interval == 0:
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                epoch, batch_id * len(data), len(train_loader.dataset),
+                100. * batch_id / len(train_loader),
+                loss.item() / len(data)))
+
+    print('====> Epoch: {} Average loss: {:.4f}'.format(
+          epoch, train_loss / len(train_loader.dataset)))
     return
 
 if __name__ == "__main__":
@@ -203,11 +219,13 @@ if __name__ == "__main__":
     for epoch in range(1, args.epochs + 1):
         train(epoch)
     """
+    for epoch in range(1, args.epochs + 1):
+        train(epoch)
+    """
     data, y = next(iter(train_loader))
-    #y = y.to(torch.float32)
-    #print(data.dtype)
-    #print(y)
-    x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(data.to(device),y.to(device))
+    x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(data.to(device),y.to(device), manipulated=False)
     print(x_recon.size())
     print(mu_q1.size())
     print(logvar_q1.size())
+
+    """
