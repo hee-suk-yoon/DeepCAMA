@@ -7,6 +7,7 @@ from torch.nn import functional as F
 from torchvision import datasets, transforms
 from torchvision.utils import save_image
 import matplotlib.pyplot as plt
+import numpy as np
 
 parser = argparse.ArgumentParser(description='DeepCAMA MNIST Example')
 parser.add_argument('--batch-size', type=int, default=128, metavar='N',
@@ -35,6 +36,15 @@ test_data = datasets.MNIST('./data/train/', train=False, transform=transforms.To
 train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, **kwargs)
 val_lodaer = torch.utils.data.DataLoader(val_data, batch_size=args.batch_size, shuffle=True, **kwargs)
 test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.batch_size, shuffle=True, **kwargs)
+
+"""
+p_yi = np.zeros(10)
+for i, (data, y) in enumerate(train_data):
+    p_yi[y] = p_yi[y] + 1
+sum_temp = p_yi.sum()
+for i in range(0,10):
+    p_yi[i] = p_yi[i]/(sum_temp)
+"""
 
 class DeepCAMA(nn.Module):
     def __init__(self):
@@ -109,6 +119,10 @@ class DeepCAMA(nn.Module):
         return torch.sigmoid(self.deconv3(k2)) 
 
     def forward(self, x,y):
+        #x shape -> (#batch, channels=1, width, height)
+        #y shape -> (#batch)
+        y = y.view(args.batch_size,-1) #y shape -> (#batch, 1(which is the label))
+        y = F.one_hot(y,num_classes=10).view(args.batch_size,10) #y shape -> (#batch, 10)
 
         #q(m|x)
         mu_q2, logvar_q2 = self.encode2(x)
@@ -124,20 +138,32 @@ class DeepCAMA(nn.Module):
 
 
 model = DeepCAMA().to(device)
-x = torch.ones((1,1,28,28)).to(device)
-a = next(iter(test_loader)) 
-x = a[0][0].reshape(1,1,28,28).to(device)
-save_image(x[0],'tempp.png')
+#x = torch.ones((1,1,28,28)).to(device)
+#a = next(iter(test_loader)) 
+#x = a[0][0].reshape(1,1,28,28).to(device)
+#save_image(x[0],'tempp.png')
 #(batch, in_channel, width, height)
 #y = torch.ones(2).to(device)
-y = torch.tensor([0.0,0.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]).to(device)
+#y = torch.tensor([0.0,0.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]).to(device)
 #(label)
 #m = torch.ones(32).to(device)
 #z = torch.ones(64).to(device)
-x_recon = model(x,y)
-print(x_recon.size())
-print(x_recon)
-save_image(x_recon[0],'temp.png')
+#x_recon = model(x,y)
+#print(x_recon.size())
+#print(x_recon)
+#save_image(x_recon[0],'temp.png')
+
+# Reconstruction + KL divergence losses summed over all elements and batch
+def loss_function(recon_x, x, y, mu_q1, logvar_q1, mu_q2, logvar_q2):
+    BCE = F.binary_cross_entropy(recon_x.view(-1,784), x.view(-1, 784), reduction='sum')
+
+    # see Appendix B from VAE paper:
+    # Kingma and Welling. Auto-Encoding Variational Bayes. ICLR, 2014
+    # https://arxiv.org/abs/1312.6114
+    # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
+    KLD = -0.5 * torch.sum(1 + logvar_q1 - mu_q1.pow(2) - logvar_q1.exp())
+
+    return BCE + 0.1 + KLD
 """
 model = VAE().to(device)
 optimizer = optim.Adam(model.parameters(), lr=1e-3)
