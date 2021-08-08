@@ -75,30 +75,41 @@ class DeepCAMA(nn.Module):
         std = torch.exp(0.5*logvar)
         eps = torch.randn_like(std)
         return mu + eps*std
-        
-    def forward(self, y, z, m):
+    
+    def encode2(self, x):
+        #q(m|x)
+        a = F.max_pool2d(F.relu(self.qmx_conv1(x)),2)
+        b = F.max_pool2d(F.relu(self.qmx_conv2(a)),2)
+        c = F.max_pool2d(F.relu(self.qmx_conv3(b)),2,padding = 1)
+        d = torch.flatten(c)
+        d2 = F.relu(self.qmx_fc1(d))
+        return self.qmx_fc21(d2), self.qmx_fc22(d2)
+    
+    def encode1(self,x,y):
+        a = self.qzxym_conv1(x)
+        a = F.max_pool2d(a,2)
+        b = self.qzxym_conv2(a)
+        b = F.max_pool2d(b,2)
+        c = self.qzxym_conv3(b)
+        c = F.max_pool2d(c,2)
+        d = torch.flatten(c)
+        d2 = self.qzxym_fc1(d)
+        print(d2.size())
+        e = torch.cat((d2,y,m))
+        print(e.size())
+        f = self.qzxym_fc2(e)
+        g1 = self.qzxym_fc31(f)
+        g2 = self.qzxym_fc32(f)
+        print(g1.size())
+        return
+    def decode(self,y,z,m):
+        return
+
+    def forward(self, x,y):
 
         #q(m|x)
-        """
-        print(x.size())
-        a = self.qmx_conv1(x)
-        a = F.max_pool2d(a,2)
-        print(a.size())
-        b = self.qmx_conv2(a)
-        b = F.max_pool2d(b,2)
-        print(b.size())
-        c = self.qmx_conv3(b)
-        c = F.max_pool2d(c,2,padding = 1)
-        print(c.size())
-        d = torch.flatten(c)
-        print(d.size())
-        d2 = self.qmx_fc1(d)
-        print(d2.size())
-        e = self.qmx_fc21(d2)
-        f = self.qmx_fc22(d2)
-        print(e.size())
-        print(f.size())
-        """
+        mu_q2, logvar_q2 = self.encode2(x)
+        m = self.reparameterize(mu_q2, logvar_q2)
 
         #(q(z|x,y,m))
         """
@@ -146,9 +157,11 @@ class DeepCAMA(nn.Module):
         return 
 model = DeepCAMA().to(device)
 x = torch.ones((1,1,28,28)).to(device)
+#(batch, in_channel, width, height)
 y = torch.ones(10).to(device)
-m = torch.ones(32).to(device)
-z = torch.ones(64).to(device)
+#(label)
+#m = torch.ones(32).to(device)
+#z = torch.ones(64).to(device)
 model(y,m,z)
 """
 model = VAE().to(device)
