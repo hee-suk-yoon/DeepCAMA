@@ -85,25 +85,28 @@ class DeepCAMA(nn.Module):
         d2 = F.relu(self.qmx_fc1(d))
         return self.qmx_fc21(d2), self.qmx_fc22(d2)
     
-    def encode1(self,x,y):
-        a = self.qzxym_conv1(x)
-        a = F.max_pool2d(a,2)
-        b = self.qzxym_conv2(a)
-        b = F.max_pool2d(b,2)
-        c = self.qzxym_conv3(b)
-        c = F.max_pool2d(c,2)
+    def encode1(self,x,y,m):
+        #q(z|x,y,m)
+        a = F.max_pool2d(F.relu(self.qzxym_conv1(x)),2)
+        b = F.max_pool2d(F.relu(self.qzxym_conv2(a)),2)
+        c = F.max_pool2d(F.relu(self.qzxym_conv3(b)),2)
         d = torch.flatten(c)
-        d2 = self.qzxym_fc1(d)
-        print(d2.size())
+        d2 = F.relu(self.qzxym_fc1(d))
         e = torch.cat((d2,y,m))
-        print(e.size())
-        f = self.qzxym_fc2(e)
-        g1 = self.qzxym_fc31(f)
-        g2 = self.qzxym_fc32(f)
-        print(g1.size())
-        return
+        f = F.relu(self.qzxym_fc2(e))
+        return self.qzxym_fc31(f), self.qzxym_fc32(f)
+
     def decode(self,y,z,m):
-        return
+        a = F.relu(self.p_fc2(F.relu(self.p_fc1(y))))
+        b = F.relu(self.p_fc4(F.relu(self.p_fc3(z))))
+        c = F.relu(self.p_fc8(F.relu(self.p_fc7(F.relu(self.p_fc6(F.relu(self.p_fc5(m))))))))
+
+        i = torch.cat((a,b,c))
+        i = F.relu(self.p_projection(i))
+        j = i.reshape(1,64,4,4)
+        k = F.relu(self.deconv1(j))
+        k2 = F.relu(self.deconv2(k))
+        return torch.sigmoid(self.deconv3(k2)) 
 
     def forward(self, x,y):
 
@@ -112,57 +115,28 @@ class DeepCAMA(nn.Module):
         m = self.reparameterize(mu_q2, logvar_q2)
 
         #(q(z|x,y,m))
-        """
-        a = self.qzxym_conv1(x)
-        a = F.max_pool2d(a,2)
-        b = self.qzxym_conv2(a)
-        b = F.max_pool2d(b,2)
-        c = self.qzxym_conv3(b)
-        c = F.max_pool2d(c,2)
-        d = torch.flatten(c)
-        d2 = self.qzxym_fc1(d)
-        print(d2.size())
-        e = torch.cat((d2,y,m))
-        print(e.size())
-        f = self.qzxym_fc2(e)
-        g1 = self.qzxym_fc31(f)
-        g2 = self.qzxym_fc32(f)
-        print(g1.size())
-        """
+        mu_q1, logvar_q1 = self.encode1(x,y,m)
+        z = self.reparameterize(mu_q1, logvar_q1)
+
         #p(x|y,z,m)
-        """
-        a = self.p_fc1(y)
-        b = self.p_fc2(a)
+        x_recon = self.decode(y,z,m)
+        return x_recon
 
-        c = self.p_fc3(z)
-        d = self.p_fc4(c)
 
-        e = self.p_fc5(m)
-        f = self.p_fc6(e)
-        g = self.p_fc7(f)
-        h = self.p_fc8(g)
-
-        i = torch.cat((b,d,h))
-        print(i.size())
-        i = self.p_projection(i)
-        j = i.reshape(1,64,4,4)
-        print(j.size())
-        k = self.deconv1(j)
-        print(k.size())
-        k2 = self.deconv2(k)
-        print(k2.size())
-        k3 = self.deconv3(k2)
-        print(k3.size())
-        """
-        return 
 model = DeepCAMA().to(device)
 x = torch.ones((1,1,28,28)).to(device)
+a = next(iter(test_loader)) 
+x = a[0][0].reshape(1,1,28,28).to(device)
+save_image(x[0],'tempp.png')
 #(batch, in_channel, width, height)
-y = torch.ones(10).to(device)
+y = torch.ones(2).to(device)
 #(label)
 #m = torch.ones(32).to(device)
 #z = torch.ones(64).to(device)
-model(y,m,z)
+x_recon = model(x,y)
+print(x_recon.size())
+print(x_recon)
+save_image(x_recon[0],'temp.png')
 """
 model = VAE().to(device)
 optimizer = optim.Adam(model.parameters(), lr=1e-3)
