@@ -91,48 +91,48 @@ class DeepCAMA(nn.Module):
     def encode1(self,x,y,m):
         #q(z|x,y,m)
         a = F.max_pool2d(F.relu(self.qzxym_conv1(x)),2)
-        print('size of q(z|x,y,m) a is ' + str(a.size()))
+        #print('size of q(z|x,y,m) a is ' + str(a.size()))
         b = F.max_pool2d(F.relu(self.qzxym_conv2(a)),2)
-        print('size of q(z|x,y,m) b is ' + str(b.size()))
+        #print('size of q(z|x,y,m) b is ' + str(b.size()))
         c = F.max_pool2d(F.relu(self.qzxym_conv3(b)),2, padding = 1)
-        print('size of q(z|x,y,m) c is ' + str(c.size()))
+        #print('size of q(z|x,y,m) c is ' + str(c.size()))
         #d = torch.flatten(c)
         d = self.qzxym_flatten(c)
-        print('size of q(z|x,y,m) d is ' + str(d.size()))
+        #print('size of q(z|x,y,m) d is ' + str(d.size()))
         d2 = F.relu(self.qzxym_fc1(d))
-        print('size of q(z|x,y,m) d2 is ' + str(d2.size()))
-        print('size of q(z|x,y,m) y is ' + str(y.size()))
-        print('size of q(z|x,y,m) m is ' + str(m.size()))
+        #print('size of q(z|x,y,m) d2 is ' + str(d2.size()))
+        #print('size of q(z|x,y,m) y is ' + str(y.size()))
+        #print('size of q(z|x,y,m) m is ' + str(m.size()))
         e = torch.cat((d2,y,m),dim = 1)
-        print('size of e is ' + str(e.size()))
+        #print('size of e is ' + str(e.size()))
         f = F.relu(self.qzxym_fc2(e))
         return self.qzxym_fc31(f), self.qzxym_fc32(f)
 
     def encode2(self, x):
         #q(m|x)
         a = F.max_pool2d(F.relu(self.qmx_conv1(x)),2)
-        print('size of a is ' + str(a.size()))
+        #print('size of a is ' + str(a.size()))
         b = F.max_pool2d(F.relu(self.qmx_conv2(a)),2)
         c = F.max_pool2d(F.relu(self.qmx_conv3(b)),2,padding = 1)
         #d = torch.flatten(c)
         #d = nn.Flatten(c)
         d = self.qmx_flatten(c)
-        print('size of d is ' + str(d.size()))
+        #print('size of d is ' + str(d.size()))
         d2 = F.relu(self.qmx_fc1(d))
         return self.qmx_fc21(d2), self.qmx_fc22(d2)
     
     def decode(self,y,z,m):
-        print('size of decode y is ' + str(y.size()))
-        print('size of decode z is ' + str(z.size()))
-        print('size of decode m is ' + str(m.size()))
+        #print('size of decode y is ' + str(y.size()))
+        #print('size of decode z is ' + str(z.size()))
+        #print('size of decode m is ' + str(m.size()))
         a = F.relu(self.p_fc2(F.relu(self.p_fc1(y))))
         b = F.relu(self.p_fc4(F.relu(self.p_fc3(z))))
         c = F.relu(self.p_fc8(F.relu(self.p_fc7(F.relu(self.p_fc6(F.relu(self.p_fc5(m))))))))
 
         i = torch.cat((a,b,c), dim = 1)
-        print('size of decode i is ' + str(i.size()))
+        #print('size of decode i is ' + str(i.size()))
         i = F.relu(self.p_projection(i))
-        print('size of decode i is ' + str(i.size()))
+        #print('size of decode i is ' + str(i.size()))
         #j = i.reshape(args.batch_size,64,4,4)
         j = i.reshape(-1,64,4,4)
         k = F.relu(self.deconv1(j))
@@ -145,15 +145,15 @@ class DeepCAMA(nn.Module):
         y = y.view(-1,1) #y shape -> (#batch, 1(which is the label))
         y = F.one_hot(y,num_classes=10).view(-1,10) #y shape -> (#batch, 10)
         y = y.to(torch.float32)
-        print('size of y is ' + str(y.size()))
+        #print('size of y is ' + str(y.size()))
         #q(m|x)
         mu_q2, logvar_q2 = self.encode2(x)
-        print('size of mu_q2 is ' + str(mu_q2.size()))
+        #print('size of mu_q2 is ' + str(mu_q2.size()))
         m = self.reparameterize(mu_q2, logvar_q2)
         if not manipulated:
             m = m.zero_()
 
-        print('size of m is ' + str(m.size()))
+        #print('size of m is ' + str(m.size()))
         #(q(z|x,y,m))
         mu_q1, logvar_q1 = self.encode1(x,y,m)
         z = self.reparameterize(mu_q1, logvar_q1)
@@ -190,7 +190,7 @@ def loss_function(recon_x, x, y, mu_q1, logvar_q1, mu_q2, logvar_q2):
     # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
     KLD = -0.5 * torch.sum(1 + logvar_q1 - mu_q1.pow(2) - logvar_q1.exp())
 
-    return BCE - 0.1 + KLD
+    return BCE  + KLD
 
 def train(epoch):
     model.eval()
@@ -220,12 +220,13 @@ if __name__ == "__main__":
         train(epoch)
     """
     for epoch in range(1, args.epochs + 1):
-        train(epoch)
+       train(epoch)
     """
     data, y = next(iter(train_loader))
     x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(data.to(device),y.to(device), manipulated=False)
     print(x_recon.size())
     print(mu_q1.size())
     print(logvar_q1.size())
-
+    
     """
+    torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight.pt')
