@@ -75,16 +75,7 @@ class DeepCAMA(nn.Module):
         std = torch.exp(0.5*logvar)
         eps = torch.randn_like(std)
         return mu + eps*std
-    
-    def encode2(self, x):
-        #q(m|x)
-        a = F.max_pool2d(F.relu(self.qmx_conv1(x)),2)
-        b = F.max_pool2d(F.relu(self.qmx_conv2(a)),2)
-        c = F.max_pool2d(F.relu(self.qmx_conv3(b)),2,padding = 1)
-        d = torch.flatten(c)
-        d2 = F.relu(self.qmx_fc1(d))
-        return self.qmx_fc21(d2), self.qmx_fc22(d2)
-    
+
     def encode1(self,x,y,m):
         #q(z|x,y,m)
         a = F.max_pool2d(F.relu(self.qzxym_conv1(x)),2)
@@ -96,6 +87,15 @@ class DeepCAMA(nn.Module):
         f = F.relu(self.qzxym_fc2(e))
         return self.qzxym_fc31(f), self.qzxym_fc32(f)
 
+    def encode2(self, x):
+        #q(m|x)
+        a = F.max_pool2d(F.relu(self.qmx_conv1(x)),2)
+        b = F.max_pool2d(F.relu(self.qmx_conv2(a)),2)
+        c = F.max_pool2d(F.relu(self.qmx_conv3(b)),2,padding = 1)
+        d = torch.flatten(c)
+        d2 = F.relu(self.qmx_fc1(d))
+        return self.qmx_fc21(d2), self.qmx_fc22(d2)
+    
     def decode(self,y,z,m):
         a = F.relu(self.p_fc2(F.relu(self.p_fc1(y))))
         b = F.relu(self.p_fc4(F.relu(self.p_fc3(z))))
@@ -129,7 +129,8 @@ a = next(iter(test_loader))
 x = a[0][0].reshape(1,1,28,28).to(device)
 save_image(x[0],'tempp.png')
 #(batch, in_channel, width, height)
-y = torch.ones(2).to(device)
+#y = torch.ones(2).to(device)
+y = torch.tensor([0.0,0.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]).to(device)
 #(label)
 #m = torch.ones(32).to(device)
 #z = torch.ones(64).to(device)
