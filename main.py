@@ -193,6 +193,7 @@ def train(epoch):
     print('====> Epoch: {} Average loss: {:.4f}'.format(
           epoch, train_loss / len(train_loader.dataset)))
     return
+
 def logRation_predic(x, x_recon, mu_q1, logvar_q1, m):
     #sample from z~q(z|x,y,m)
     std_q1 = torch.exp(0.5*logvar_q1)
@@ -215,14 +216,6 @@ def logRation_predic(x, x_recon, mu_q1, logvar_q1, m):
     for i in range(0,args.batch_size):
         p_temp[i] = torch.exp(-F.binary_cross_entropy(x_recon[i].view(-1,784), x[i].view(-1, 784), reduction='sum'))
     
-    """
-    pxyzm = torch.exp(torch.sum(torch.log(torch.mul(torch.pow(x_recon,x),torch.pow(1-x_recon,1-x))),dim=[1,2,3]))
-    pxyzm = pxyzm.view(128,-1)   
-    print(torch.mul(torch.pow(x_recon,x),torch.pow(1-x_recon,1-x))    
-    #print(pxyzm)
-    """
-
-
     #calculate p(y)
     py = 0.1
     
@@ -237,20 +230,31 @@ def logRation_predic(x, x_recon, mu_q1, logvar_q1, m):
             sum_temp = sum_temp + temp
         r2[i][0] = sum_temp
 
-    s = p_temp + math.log(0.1) + r2 - r
-    print(s)
-    print(torch.exp(s))
+    s = p_temp + math.log(py) + r2 - r
+
     #temp = log_pxyzm.to(device) + log_py + log_r2.to(device) - log_r.to(device)
     #return torch.exp(temp)
-    return
+    return torch.exp(s)
 
-def predic(x, x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2):
-    #m~q(m|x) for each batch
-    std_q2 = torch.exp(0.5*logvar_q2)
-    eps_q2 = torch.randn_like(std_q2)
-    m = mu_q2 + eps_q2*std_q2 #m size -> (#batch, sizeof(m)) = (#batch, 32)
-    print(logRation_predic(x.to(device), x_recon.to(device), mu_q1.to(device), logvar_q1.to(device), m.to(device)))
-    #print(m.size())
+def predic(x):
+    #print(x.size())
+    yc = np.zeros(x.size()[0], 10)
+    for i in range(0,10):
+        y = i*torch.ones(128).type(torch.int64)
+        #print(y)
+        x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(x.to(device),y.to(device), manipulated=False)
+        #m~q(m|x) for each batch
+        std_q2 = torch.exp(0.5*logvar_q2)
+        eps_q2 = torch.randn_like(std_q2)
+        m = mu_q2 + eps_q2*std_q2 #m size -> (#batch, sizeof(m)) = (#batch, 32)
+
+        #calculate the log-ration term for each y = c(as an approximation to log p(x,y=c))
+        sum = 0
+        K = 50
+        for i in range(0,25):
+            sum = sum + logRation_predic(x.to(device), x_recon.to(device), mu_q1.to(device), logvar_q1.to(device), m.to(device))
+        print(sum)
+    
 
     
     
@@ -267,9 +271,12 @@ if __name__ == "__main__":
     model.eval()
 
     a,y = next(iter(test_loader)) 
+    print('here')
+    print(y.size())
+    print(y)
     x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(a.to(device),y.to(device), manipulated=False)
     #print(a)
-    predic(a, x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2)
+    predic(a)
     #print(x_recon[1])
     
     save_image(x_recon[0].view(1,28,28),'temp1.png')
