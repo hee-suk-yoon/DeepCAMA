@@ -250,7 +250,7 @@ def predic(x):
 
         #calculate the log-ration term for each y = c(as an approximation to log p(x,y=c))
         sum = 0
-        K = 100
+        K = 10
         for j in range(0,K):
             sum = sum + logRation_predic(x.to(device), x_recon.to(device), mu_q1.to(device), logvar_q1.to(device), m.to(device))
         #print(sum)
