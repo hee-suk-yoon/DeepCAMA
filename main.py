@@ -201,8 +201,8 @@ def logRation_predic(x, x_recon, mu_q1, logvar_q1, m):
     z = mu_q1 + eps_q1*std_q1 #size of z -> (#batch_size, sizeof(z))
 
     #calculate log q(z|x,y,m)
-    r = torch.zeros((args.batch_size,1))
-    for i in range(0,args.batch_size):
+    r = torch.zeros((x.size()[0],1))
+    for i in range(0,x.size()[0]):
         sum_temp = 1
         for j in range(0,mu_q1.size()[1]):
             #temp = normpdf(z[i][j].item(),mu_q1[i][j].item(),logvar_q1[i][j].item())
@@ -212,16 +212,16 @@ def logRation_predic(x, x_recon, mu_q1, logvar_q1, m):
         r[i][0] = sum_temp
     
     #calculate log p(x|y,z,m)
-    p_temp = torch.zeros((args.batch_size,1)) #log(p(x|y,z,m))
-    for i in range(0,args.batch_size):
+    p_temp = torch.zeros((x.size()[0],1)) #log(p(x|y,z,m))
+    for i in range(0,x.size()[0]):
         p_temp[i] = torch.exp(-F.binary_cross_entropy(x_recon[i].view(-1,784), x[i].view(-1, 784), reduction='sum'))
     
     #calculate p(y)
     py = 0.1
     
     #calculate log p(z)
-    r2 = torch.zeros((args.batch_size,1))
-    for i in range(0,args.batch_size):
+    r2 = torch.zeros((x.size()[0],1))
+    for i in range(0,x.size()[0]):
         sum_temp = 1
         for j in range(0,z.size()[1]):
             #temp = normpdf(z[i][j].item(),0,0)
@@ -238,7 +238,7 @@ def logRation_predic(x, x_recon, mu_q1, logvar_q1, m):
 
 def predic(x):
     #print(x.size())
-    yc = np.zeros(x.size()[0], 10)
+    yc = np.zeros((10, x.size()[0]))
     for i in range(0,10):
         y = i*torch.ones(128).type(torch.int64)
         #print(y)
@@ -251,13 +251,25 @@ def predic(x):
         #calculate the log-ration term for each y = c(as an approximation to log p(x,y=c))
         sum = 0
         K = 50
-        for i in range(0,25):
+        for j in range(0,25):
             sum = sum + logRation_predic(x.to(device), x_recon.to(device), mu_q1.to(device), logvar_q1.to(device), m.to(device))
-        print(sum)
+        #print(sum)
+        log_pxy = torch.log(sum).view(128).detach().cpu().numpy()
+        yc[i] = log_pxy
     
+    #print(yc)
+    exp_yc = np.exp(yc)
+    #print(exp_yc)
+    sum_exp_yc = np.sum(exp_yc,axis=0)
 
-    
-    
+    for i in range(0,x.size()[0]):
+        for j in range(0,10):
+            exp_yc[j][i] = exp_yc[j][i]/sum_exp_yc[i]
+    #print(exp_yc)
+
+    label = np.argmax(exp_yc,axis=0)
+    print(label)
+    return label
     
 if __name__ == "__main__":
     
@@ -271,15 +283,13 @@ if __name__ == "__main__":
     model.eval()
 
     a,y = next(iter(test_loader)) 
-    print('here')
-    print(y.size())
     print(y)
     x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(a.to(device),y.to(device), manipulated=False)
     #print(a)
     predic(a)
     #print(x_recon[1])
     
-    save_image(x_recon[0].view(1,28,28),'temp1.png')
+    #save_image(x_recon[0].view(1,28,28),'temp1.png')
     """
     x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(a.to(device),y.to(device), manipulated=False)
     save_image(x_recon[0].view(1,28,28),'temp2.png')
