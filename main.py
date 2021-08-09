@@ -203,7 +203,7 @@ def logRation_predic(x, x_recon, mu_q1, logvar_q1, m):
     #calculate log q(z|x,y,m)
     r = torch.zeros((x.size()[0],1))
     for i in range(0,x.size()[0]):
-        sum_temp = 1
+        sum_temp = 0
         for j in range(0,mu_q1.size()[1]):
             #temp = normpdf(z[i][j].item(),mu_q1[i][j].item(),logvar_q1[i][j].item())
             temp = log_gaussian(z[i][j].item(),mu_q1[i][j].item(),math.exp(logvar_q1[i][j].item()))
@@ -222,7 +222,7 @@ def logRation_predic(x, x_recon, mu_q1, logvar_q1, m):
     #calculate log p(z)
     r2 = torch.zeros((x.size()[0],1))
     for i in range(0,x.size()[0]):
-        sum_temp = 1
+        sum_temp = 0
         for j in range(0,z.size()[1]):
             #temp = normpdf(z[i][j].item(),0,0)
             temp = log_gaussian(z[i][j].item(),0,1)
@@ -284,12 +284,14 @@ if __name__ == "__main__":
 
     a,y = next(iter(test_loader)) 
     print(y)
+    #y[0] = 7
+    print(y)
     x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(a.to(device),y.to(device), manipulated=False)
     #print(a)
     predic(a)
     #print(x_recon[1])
-    
-    #save_image(x_recon[0].view(1,28,28),'temp1.png')
+    save_image(a[8].view(1,28,28),'actual.png')
+    save_image(x_recon[8].view(1,28,28),'temp1.png')
     """
     x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(a.to(device),y.to(device), manipulated=False)
     save_image(x_recon[0].view(1,28,28),'temp2.png')
