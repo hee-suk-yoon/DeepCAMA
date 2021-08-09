@@ -18,6 +18,10 @@ def normpdf(x, mean, logvar):
     num = math.exp(-(float(x)-float(mean))**2/(2*var))
     return num/denom
 
+def log_gaussian(x,mean,var):
+    std = math.sqrt(var)
+    return -math.log(std*math.sqrt(2*math.pi)+1e-4) - 0.5*((x-mean)/(std+1e-4))**2
+
 parser = argparse.ArgumentParser(description='DeepCAMA MNIST Example')
 parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 128)')
@@ -195,43 +199,57 @@ def logRation_predic(x, x_recon, mu_q1, logvar_q1, m):
     eps_q1 = torch.randn_like(std_q1)
     z = mu_q1 + eps_q1*std_q1 #size of z -> (#batch_size, sizeof(z))
 
-    #calculate q(z|x,y,m)
+    #calculate log q(z|x,y,m)
     r = torch.zeros((args.batch_size,1))
     for i in range(0,args.batch_size):
         sum_temp = 1
         for j in range(0,mu_q1.size()[1]):
-            temp = normpdf(z[i][j].item(),mu_q1[i][j].item(),logvar_q1[i][j].item())
-            sum_temp = sum_temp * temp
+            #temp = normpdf(z[i][j].item(),mu_q1[i][j].item(),logvar_q1[i][j].item())
+            temp = log_gaussian(z[i][j].item(),mu_q1[i][j].item(),math.exp(logvar_q1[i][j].item()))
+            #print(temp)
+            sum_temp = sum_temp + temp
         r[i][0] = sum_temp
-            
-    #calculate p(x|y,z,m)
+    
+    #calculate log p(x|y,z,m)
+    p_temp = torch.zeros((args.batch_size,1)) #log(p(x|y,z,m))
+    for i in range(0,args.batch_size):
+        p_temp[i] = torch.exp(-F.binary_cross_entropy(x_recon[i].view(-1,784), x[i].view(-1, 784), reduction='sum'))
+    
+    """
     pxyzm = torch.exp(torch.sum(torch.log(torch.mul(torch.pow(x_recon,x),torch.pow(1-x_recon,1-x))),dim=[1,2,3]))
-    pxyzm = pxyzm.view(128,-1)
+    pxyzm = pxyzm.view(128,-1)   
+    print(torch.mul(torch.pow(x_recon,x),torch.pow(1-x_recon,1-x))    
+    #print(pxyzm)
+    """
+
 
     #calculate p(y)
     py = 0.1
-
-    #calculate p(z)
+    
+    #calculate log p(z)
     r2 = torch.zeros((args.batch_size,1))
     for i in range(0,args.batch_size):
         sum_temp = 1
         for j in range(0,z.size()[1]):
-            temp = normpdf(z[i][j].item(),0,0)
-            sum_temp = sum_temp * temp
+            #temp = normpdf(z[i][j].item(),0,0)
+            temp = log_gaussian(z[i][j].item(),0,1)
+            #print(temp)
+            sum_temp = sum_temp + temp
         r2[i][0] = sum_temp
 
-    print(z.size())
-    print(r.size())
-    print(pxyzm.size())
-    print(r2.size())
-    return 
+    s = p_temp + math.log(0.1) + r2 - r
+    print(s)
+    print(torch.exp(s))
+    #temp = log_pxyzm.to(device) + log_py + log_r2.to(device) - log_r.to(device)
+    #return torch.exp(temp)
+    return
 
 def predic(x, x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2):
     #m~q(m|x) for each batch
     std_q2 = torch.exp(0.5*logvar_q2)
     eps_q2 = torch.randn_like(std_q2)
     m = mu_q2 + eps_q2*std_q2 #m size -> (#batch, sizeof(m)) = (#batch, 32)
-    logRation_predic(x.to(device), x_recon.to(device), mu_q1.to(device), logvar_q1.to(device), m.to(device))
+    print(logRation_predic(x.to(device), x_recon.to(device), mu_q1.to(device), logvar_q1.to(device), m.to(device)))
     #print(m.size())
 
     
