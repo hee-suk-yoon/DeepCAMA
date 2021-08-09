@@ -11,7 +11,8 @@ import numpy as np
 import scipy.stats
 import math
 
-def normpdf(x, mean, sd):
+def normpdf(x, mean, logvar):
+    sd = math.exp(0.5*logvar)
     var = float(sd)**2
     denom = (2*math.pi*var)**.5
     num = math.exp(-(float(x)-float(mean))**2/(2*var))
@@ -197,37 +198,32 @@ def logRation_predic(x, x_recon, mu_q1, logvar_q1, m):
     #calculate q(z|x,y,m)
     r = torch.zeros((args.batch_size,1))
     for i in range(0,args.batch_size):
-        sum_temp = 0
+        sum_temp = 1
         for j in range(0,mu_q1.size()[1]):
-            temp = normpdf(z[i][j],mu_q1[i][j],logvar_q1[i][j])
-            sum_temp = sum_temp + temp
-        r[i][j] = sum_temp
-    return r
+            temp = normpdf(z[i][j].item(),mu_q1[i][j].item(),logvar_q1[i][j].item())
+            sum_temp = sum_temp * temp
+        r[i][0] = sum_temp
             
     #calculate p(x|y,z,m)
-    """
-    print(torch.pow(x_recon,x)[0])
-    print(torch.pow(1-x_recon,1-x_recon)[0])
-    print(torch.mul(torch.pow(x_recon,x),torch.pow(1-x_recon,1-x))[0])
-    print('here')
-    print(torch.log(torch.mul(torch.pow(x_recon,x),torch.pow(1-x_recon,1-x)))[0])
-    a = torch.log(torch.mul(torch.pow(x_recon,x),torch.pow(1-x_recon,1-x)))[0]
-    print('here2')
-    print(a.size())
-    print(torch.sum(a,dim=[1,2]))
-    print(torch.sum(a))
-    print(a.sum())
-    """
     pxyzm = torch.exp(torch.sum(torch.log(torch.mul(torch.pow(x_recon,x),torch.pow(1-x_recon,1-x))),dim=[1,2,3]))
-    #print(x_recon.size())
-    #print(x.size())
-    #pxyzm = 
-    #pxyzm = torch.exp((torch.log(torch.pow(x_recon,x))).sum())
-    #print(pxyzm.size())
-    #print(pxyzm)
+    pxyzm = pxyzm.view(128,-1)
+
     #calculate p(y)
     py = 0.1
+
     #calculate p(z)
+    r2 = torch.zeros((args.batch_size,1))
+    for i in range(0,args.batch_size):
+        sum_temp = 1
+        for j in range(0,z.size()[1]):
+            temp = normpdf(z[i][j].item(),0,0)
+            sum_temp = sum_temp * temp
+        r2[i][0] = sum_temp
+
+    print(z.size())
+    print(r.size())
+    print(pxyzm.size())
+    print(r2.size())
     return 
 
 def predic(x, x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2):
