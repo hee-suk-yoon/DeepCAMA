@@ -250,8 +250,8 @@ def predic(x):
 
         #calculate the log-ration term for each y = c(as an approximation to log p(x,y=c))
         sum = 0
-        K = 50
-        for j in range(0,25):
+        K = 100
+        for j in range(0,K):
             sum = sum + logRation_predic(x.to(device), x_recon.to(device), mu_q1.to(device), logvar_q1.to(device), m.to(device))
         #print(sum)
         log_pxy = torch.log(sum).view(128).detach().cpu().numpy()
@@ -265,11 +265,11 @@ def predic(x):
     for i in range(0,x.size()[0]):
         for j in range(0,10):
             exp_yc[j][i] = exp_yc[j][i]/sum_exp_yc[i]
-    #print(exp_yc)
+    print(exp_yc)
 
     label = np.argmax(exp_yc,axis=0)
     print(label)
-    return label
+    #return label
     
 if __name__ == "__main__":
     
