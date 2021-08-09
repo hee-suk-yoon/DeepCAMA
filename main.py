@@ -8,6 +8,14 @@ from torchvision import datasets, transforms
 from torchvision.utils import save_image
 import matplotlib.pyplot as plt
 import numpy as np
+import scipy.stats
+import math
+
+def normpdf(x, mean, sd):
+    var = float(sd)**2
+    denom = (2*math.pi*var)**.5
+    num = math.exp(-(float(x)-float(mean))**2/(2*var))
+    return num/denom
 
 parser = argparse.ArgumentParser(description='DeepCAMA MNIST Example')
 parser.add_argument('--batch-size', type=int, default=128, metavar='N',
@@ -147,7 +155,9 @@ optimizer = optim.Adam(model.parameters(), lr=1e-5)
 
 # Reconstruction + KL divergence losses summed over all elements and batch
 def loss_function(recon_x, x, y, mu_q1, logvar_q1, mu_q2, logvar_q2):
+    print('here ' + str(recon_x.size()))
     BCE = F.binary_cross_entropy(recon_x.view(-1,784), x.view(-1, 784), reduction='sum')
+    print('here2 ' + str(BCE.size()))
 
     # see Appendix B from VAE paper:
     # Kingma and Welling. Auto-Encoding Variational Bayes. ICLR, 2014
@@ -178,7 +188,59 @@ def train(epoch):
     print('====> Epoch: {} Average loss: {:.4f}'.format(
           epoch, train_loss / len(train_loader.dataset)))
     return
+def logRation_predic(x, x_recon, mu_q1, logvar_q1, m):
+    #sample from z~q(z|x,y,m)
+    std_q1 = torch.exp(0.5*logvar_q1)
+    eps_q1 = torch.randn_like(std_q1)
+    z = mu_q1 + eps_q1*std_q1 #size of z -> (#batch_size, sizeof(z))
 
+    #calculate q(z|x,y,m)
+    r = torch.zeros((args.batch_size,1))
+    for i in range(0,args.batch_size):
+        sum_temp = 0
+        for j in range(0,mu_q1.size()[1]):
+            temp = normpdf(z[i][j],mu_q1[i][j],logvar_q1[i][j])
+            sum_temp = sum_temp + temp
+        r[i][j] = sum_temp
+    return r
+            
+    #calculate p(x|y,z,m)
+    """
+    print(torch.pow(x_recon,x)[0])
+    print(torch.pow(1-x_recon,1-x_recon)[0])
+    print(torch.mul(torch.pow(x_recon,x),torch.pow(1-x_recon,1-x))[0])
+    print('here')
+    print(torch.log(torch.mul(torch.pow(x_recon,x),torch.pow(1-x_recon,1-x)))[0])
+    a = torch.log(torch.mul(torch.pow(x_recon,x),torch.pow(1-x_recon,1-x)))[0]
+    print('here2')
+    print(a.size())
+    print(torch.sum(a,dim=[1,2]))
+    print(torch.sum(a))
+    print(a.sum())
+    """
+    pxyzm = torch.exp(torch.sum(torch.log(torch.mul(torch.pow(x_recon,x),torch.pow(1-x_recon,1-x))),dim=[1,2,3]))
+    #print(x_recon.size())
+    #print(x.size())
+    #pxyzm = 
+    #pxyzm = torch.exp((torch.log(torch.pow(x_recon,x))).sum())
+    #print(pxyzm.size())
+    #print(pxyzm)
+    #calculate p(y)
+    py = 0.1
+    #calculate p(z)
+    return 
+
+def predic(x, x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2):
+    #m~q(m|x) for each batch
+    std_q2 = torch.exp(0.5*logvar_q2)
+    eps_q2 = torch.randn_like(std_q2)
+    m = mu_q2 + eps_q2*std_q2 #m size -> (#batch, sizeof(m)) = (#batch, 32)
+    logRation_predic(x.to(device), x_recon.to(device), mu_q1.to(device), logvar_q1.to(device), m.to(device))
+    #print(m.size())
+
+    
+    
+    
 if __name__ == "__main__":
     
     #for epoch in range(1, args.epochs + 1):
@@ -192,11 +254,16 @@ if __name__ == "__main__":
 
     a,y = next(iter(test_loader)) 
     x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(a.to(device),y.to(device), manipulated=False)
+    #print(a)
+    predic(a, x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2)
+    #print(x_recon[1])
+    
     save_image(x_recon[0].view(1,28,28),'temp1.png')
+    """
     x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(a.to(device),y.to(device), manipulated=False)
     save_image(x_recon[0].view(1,28,28),'temp2.png')
     x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(a.to(device),y.to(device), manipulated=False)
     save_image(x_recon[0].view(1,28,28),'temp3.png')
     x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(a.to(device),y.to(device), manipulated=False)
     save_image(x_recon[0].view(1,28,28),'temp4.png')
-    
+    """
