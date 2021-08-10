@@ -214,8 +214,11 @@ def logRation_predic(x, x_recon, mu_q1, logvar_q1, m):
     #calculate log p(x|y,z,m)
     p_temp = torch.zeros((x.size()[0],1)) #log(p(x|y,z,m))
     for i in range(0,x.size()[0]):
-        p_temp[i] = torch.exp(-F.binary_cross_entropy(x_recon[i].view(-1,784), x[i].view(-1, 784), reduction='sum'))
-    
+        #p_temp[i][0] = torch.exp(-F.binary_cross_entropy(x_recon[i].view(-1,784), x[i].view(-1, 784), reduction='sum'))
+        #p_temp[i][0] = (-F.binary_cross_entropy(x_recon[i].view(-1,784), x[i].view(-1, 784), reduction='sum'))
+        p_temp[i][0] = torch.sum(torch.mul(x[i].view(-1,784), torch.log(x_recon[i].view(-1,784)+1e-4)) + torch.mul(1-x[i].view(-1,784), torch.log(1-x[i].view(-1,784)+1e-4)))
+
+    #print(p_temp)
     #calculate p(y)
     py = 0.1
     
@@ -230,8 +233,10 @@ def logRation_predic(x, x_recon, mu_q1, logvar_q1, m):
             sum_temp = sum_temp + temp
         r2[i][0] = sum_temp
 
-    s = p_temp + math.log(py) + r2 - r
-
+    #adding a constant at the end to prevent underflow. The term will not affect the overall calculation due to the softmax.
+    s = p_temp.reshape(x.size()[0]) + math.log(py) + r2.reshape(x.size()[0]) - r.reshape(x.size()[0]) + 100
+    #print(s)
+    #print(torch.exp(s))
     #temp = log_pxyzm.to(device) + log_py + log_r2.to(device) - log_r.to(device)
     #return torch.exp(temp)
     return torch.exp(s)
@@ -247,14 +252,14 @@ def predic(x):
         std_q2 = torch.exp(0.5*logvar_q2)
         eps_q2 = torch.randn_like(std_q2)
         m = mu_q2 + eps_q2*std_q2 #m size -> (#batch, sizeof(m)) = (#batch, 32)
-
+        #m = torch.zeros(x.size()[0], 32)
         #calculate the log-ration term for each y = c(as an approximation to log p(x,y=c))
         sum = 0
-        K = 10
+        K = 50
         for j in range(0,K):
             sum = sum + logRation_predic(x.to(device), x_recon.to(device), mu_q1.to(device), logvar_q1.to(device), m.to(device))
         #print(sum)
-        log_pxy = torch.log(sum).view(128).detach().cpu().numpy()
+        log_pxy = torch.log(sum).view(x.size()[0]).detach().cpu().numpy()
         yc[i] = log_pxy
     
     #print(yc)
