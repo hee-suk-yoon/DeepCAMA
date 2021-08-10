@@ -11,7 +11,7 @@ import numpy as np
 import scipy.stats
 import math
 
-
+###
 #    -----------------Helper Functions-----------------
 def log_gaussian(x,mean,var):
     std = math.sqrt(var)
