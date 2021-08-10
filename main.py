@@ -18,7 +18,16 @@ def log_gaussian(x,mean,var):
     return -math.log(std*math.sqrt(2*math.pi)+1e-4) - 0.5*((x-mean)/(std+1e-4))**2
 
 def accuracy(y_true, y_pred):
-    return
+    #y_true and y_pred is assumed to be numpy array.
+    y_true = y_true.reshape(-1).astype(int)
+    y_pred = y_pred.reshape(-1).astype(int)
+
+    correct = 0
+    for i in range(0,y_true.shape[0]):
+        if y_true[i] == y_pred[i]:
+            correct = correct + 1
+
+    return correct/y_true.shape[0]
 #  ----------------------------------------------------
 
 
@@ -273,10 +282,15 @@ if __name__ == "__main__":
     #y[0] = 7
     x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(a.to(device),y.to(device), manipulated=False)
     #print(a)
-    pred(a)
+
+    y_pred = pred(a)
+
+
+    y_temp = y.detach().cpu().numpy()
+    print(accuracy(y_temp,y_pred))
     #print(x_recon[1])
-    save_image(a[8].view(1,28,28),'actual.png')
-    save_image(x_recon[8].view(1,28,28),'temp1.png')
+    #save_image(a[8].view(1,28,28),'actual.png')
+    #save_image(x_recon[8].view(1,28,28),'temp1.png')
     """
     x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(a.to(device),y.to(device), manipulated=False)
     save_image(x_recon[0].view(1,28,28),'temp2.png')
