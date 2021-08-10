@@ -11,16 +11,16 @@ import numpy as np
 import scipy.stats
 import math
 
-def normpdf(x, mean, logvar):
-    sd = math.exp(0.5*logvar)
-    var = float(sd)**2
-    denom = (2*math.pi*var)**.5
-    num = math.exp(-(float(x)-float(mean))**2/(2*var))
-    return num/denom
 
+#    -----------------Helper Functions-----------------
 def log_gaussian(x,mean,var):
     std = math.sqrt(var)
     return -math.log(std*math.sqrt(2*math.pi)+1e-4) - 0.5*((x-mean)/(std+1e-4))**2
+
+def accuracy(y_true, y_pred):
+    return
+#  ----------------------------------------------------
+
 
 parser = argparse.ArgumentParser(description='DeepCAMA MNIST Example')
 parser.add_argument('--batch-size', type=int, default=128, metavar='N',
@@ -49,15 +49,6 @@ test_data = datasets.MNIST('./data/train/', train=False, transform=transforms.To
 train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, **kwargs)
 val_lodaer = torch.utils.data.DataLoader(val_data, batch_size=args.batch_size, shuffle=True, **kwargs)
 test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.batch_size, shuffle=True, **kwargs)
-
-"""
-p_yi = np.zeros(10)
-for i, (data, y) in enumerate(train_data):
-    p_yi[y] = p_yi[y] + 1
-sum_temp = p_yi.sum()
-for i in range(0,10):
-    p_yi[i] = p_yi[i]/(sum_temp)
-"""
 
 class DeepCAMA(nn.Module):
     def __init__(self):
@@ -160,9 +151,7 @@ optimizer = optim.Adam(model.parameters(), lr=1e-5)
 
 # Reconstruction + KL divergence losses summed over all elements and batch
 def loss_function(recon_x, x, y, mu_q1, logvar_q1, mu_q2, logvar_q2):
-    print('here ' + str(recon_x.size()))
     BCE = F.binary_cross_entropy(recon_x.view(-1,784), x.view(-1, 784), reduction='sum')
-    print('here2 ' + str(BCE.size()))
 
     # see Appendix B from VAE paper:
     # Kingma and Welling. Auto-Encoding Variational Bayes. ICLR, 2014
@@ -194,56 +183,47 @@ def train(epoch):
           epoch, train_loss / len(train_loader.dataset)))
     return
 
-def logRation_predic(x, x_recon, mu_q1, logvar_q1, m):
+def pred_logRatio(x, x_recon, mu_q1, logvar_q1, m):
+    batch_size = x.size()[0]
     #sample from z~q(z|x,y,m)
     std_q1 = torch.exp(0.5*logvar_q1)
     eps_q1 = torch.randn_like(std_q1)
     z = mu_q1 + eps_q1*std_q1 #size of z -> (#batch_size, sizeof(z))
 
     #calculate log q(z|x,y,m)
-    r = torch.zeros((x.size()[0],1))
-    for i in range(0,x.size()[0]):
+    log_q1 = torch.zeros((batch_size,1))
+    for i in range(0,batch_size):
         sum_temp = 0
         for j in range(0,mu_q1.size()[1]):
-            #temp = normpdf(z[i][j].item(),mu_q1[i][j].item(),logvar_q1[i][j].item())
             temp = log_gaussian(z[i][j].item(),mu_q1[i][j].item(),math.exp(logvar_q1[i][j].item()))
-            #print(temp)
             sum_temp = sum_temp + temp
-        r[i][0] = sum_temp
+        log_q1[i][0] = sum_temp
     
     #calculate log p(x|y,z,m)
-    p_temp = torch.zeros((x.size()[0],1)) #log(p(x|y,z,m))
-    for i in range(0,x.size()[0]):
-        #p_temp[i][0] = torch.exp(-F.binary_cross_entropy(x_recon[i].view(-1,784), x[i].view(-1, 784), reduction='sum'))
-        #p_temp[i][0] = (-F.binary_cross_entropy(x_recon[i].view(-1,784), x[i].view(-1, 784), reduction='sum'))
-        p_temp[i][0] = torch.sum(torch.mul(x[i].view(-1,784), torch.log(x_recon[i].view(-1,784)+1e-4)) + torch.mul(1-x[i].view(-1,784), torch.log(1-x[i].view(-1,784)+1e-4)))
+    log_pxyzm = torch.zeros((x.size()[0],1)) 
+    for i in range(0,batch_size):
+        log_pxyzm[i][0] = torch.sum(torch.mul(x[i].view(-1,784), torch.log(x_recon[i].view(-1,784)+1e-4)) + torch.mul(1-x[i].view(-1,784), torch.log(1-x[i].view(-1,784)+1e-4)))
 
-    #print(p_temp)
     #calculate p(y)
     py = 0.1
     
     #calculate log p(z)
-    r2 = torch.zeros((x.size()[0],1))
-    for i in range(0,x.size()[0]):
+    log_pz = torch.zeros((batch_size,1))
+    for i in range(0,batch_size):
         sum_temp = 0
         for j in range(0,z.size()[1]):
-            #temp = normpdf(z[i][j].item(),0,0)
             temp = log_gaussian(z[i][j].item(),0,1)
-            #print(temp)
             sum_temp = sum_temp + temp
-        r2[i][0] = sum_temp
+        log_pz[i][0] = sum_temp
 
     #adding a constant at the end to prevent underflow. The term will not affect the overall calculation due to the softmax.
-    s = p_temp.reshape(x.size()[0]) + math.log(py) + r2.reshape(x.size()[0]) - r.reshape(x.size()[0]) + 100
-    #print(s)
-    #print(torch.exp(s))
-    #temp = log_pxyzm.to(device) + log_py + log_r2.to(device) - log_r.to(device)
-    #return torch.exp(temp)
+    underflow_const = 100
+    s = log_pxyzm.reshape(batch_size) + math.log(py) + log_pz.reshape(batch_size) - log_q1.reshape(batch_size) + underflow_const
     return torch.exp(s)
 
-def predic(x):
-    #print(x.size())
-    yc = np.zeros((10, x.size()[0]))
+def pred(x):
+    batch_size = x.size()[0]
+    yc = np.zeros((10,batch_size))
     for i in range(0,10):
         y = i*torch.ones(128).type(torch.int64)
         #print(y)
@@ -255,9 +235,9 @@ def predic(x):
         #m = torch.zeros(x.size()[0], 32)
         #calculate the log-ration term for each y = c(as an approximation to log p(x,y=c))
         sum = 0
-        K = 50
+        K = 20
         for j in range(0,K):
-            sum = sum + logRation_predic(x.to(device), x_recon.to(device), mu_q1.to(device), logvar_q1.to(device), m.to(device))
+            sum = sum + pred_logRatio(x.to(device), x_recon.to(device), mu_q1.to(device), logvar_q1.to(device), m.to(device))
         #print(sum)
         log_pxy = torch.log(sum).view(x.size()[0]).detach().cpu().numpy()
         yc[i] = log_pxy
@@ -267,15 +247,16 @@ def predic(x):
     #print(exp_yc)
     sum_exp_yc = np.sum(exp_yc,axis=0)
 
-    for i in range(0,x.size()[0]):
+    for i in range(0,batch_size):
         for j in range(0,10):
             exp_yc[j][i] = exp_yc[j][i]/sum_exp_yc[i]
-    print(exp_yc)
 
     label = np.argmax(exp_yc,axis=0)
-    print(label)
-    #return label
+    return label
     
+
+
+
 if __name__ == "__main__":
     
     #for epoch in range(1, args.epochs + 1):
@@ -290,10 +271,9 @@ if __name__ == "__main__":
     a,y = next(iter(test_loader)) 
     print(y)
     #y[0] = 7
-    print(y)
     x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(a.to(device),y.to(device), manipulated=False)
     #print(a)
-    predic(a)
+    pred(a)
     #print(x_recon[1])
     save_image(a[8].view(1,28,28),'actual.png')
     save_image(x_recon[8].view(1,28,28),'temp1.png')
