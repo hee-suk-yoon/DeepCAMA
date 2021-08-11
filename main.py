@@ -11,11 +11,11 @@ import numpy as np
 import scipy.stats
 import math
 
-###
+
 #    -----------------Helper Functions-----------------
 def log_gaussian(x,mean,var):
-    std = math.sqrt(var)
-    return -math.log(std*math.sqrt(2*math.pi)+1e-4) - 0.5*((x-mean)/(std+1e-4))**2
+    std = np.sqrt(var)
+    return -np.log(std*np.sqrt(2*math.pi)+1e-4) - 0.5*((x-mean)/(std+1e-4))**2
 
 def accuracy(y_true, y_pred):
     #y_true and y_pred is assumed to be numpy array.
@@ -193,42 +193,43 @@ def train(epoch):
     return
 
 def pred_logRatio(x, x_recon, mu_q1, logvar_q1, m):
-    batch_size = x.size()[0]
+    batch_size = x.shape[0]
     #sample from z~q(z|x,y,m)
-    std_q1 = torch.exp(0.5*logvar_q1)
-    eps_q1 = torch.randn_like(std_q1)
+    std_q1 = np.exp(0.5*logvar_q1)
+    eps_q1 = np.random.randn(*std_q1.shape)
     z = mu_q1 + eps_q1*std_q1 #size of z -> (#batch_size, sizeof(z))
 
     #calculate log q(z|x,y,m)
-    log_q1 = torch.zeros((batch_size,1))
+    log_q1 = np.zeros((batch_size,1))
     for i in range(0,batch_size):
         sum_temp = 0
-        for j in range(0,mu_q1.size()[1]):
-            temp = log_gaussian(z[i][j].item(),mu_q1[i][j].item(),math.exp(logvar_q1[i][j].item()))
+        for j in range(0,mu_q1.shape[1]):
+            temp = log_gaussian(z[i][j],mu_q1[i][j],math.exp(logvar_q1[i][j]))
             sum_temp = sum_temp + temp
         log_q1[i][0] = sum_temp
     
     #calculate log p(x|y,z,m)
-    log_pxyzm = torch.zeros((x.size()[0],1)) 
+    log_pxyzm = np.zeros((x.shape[0],1)) 
     for i in range(0,batch_size):
-        log_pxyzm[i][0] = torch.sum(torch.mul(x[i].view(-1,784), torch.log(x_recon[i].view(-1,784)+1e-4)) + torch.mul(1-x[i].view(-1,784), torch.log(1-x[i].view(-1,784)+1e-4)))
+        a = np.multiply(x[i].reshape(-1,784), np.log(x_recon[i].reshape(-1,784)+1e-4)) + np.multiply(1-x[i].reshape(-1,784), np.log(1-x[i].reshape(-1,784)+1e-4))
+        log_pxyzm[i][0] = np.sum(a)
 
     #calculate p(y)
     py = 0.1
     
     #calculate log p(z)
-    log_pz = torch.zeros((batch_size,1))
+    log_pz = np.zeros((batch_size,1))
     for i in range(0,batch_size):
         sum_temp = 0
-        for j in range(0,z.size()[1]):
-            temp = log_gaussian(z[i][j].item(),0,1)
+        for j in range(0,z.shape[1]):
+            temp = log_gaussian(z[i][j],0,1)
             sum_temp = sum_temp + temp
         log_pz[i][0] = sum_temp
 
     #adding a constant at the end to prevent underflow. The term will not affect the overall calculation due to the softmax.
     underflow_const = 100
     s = log_pxyzm.reshape(batch_size) + math.log(py) + log_pz.reshape(batch_size) - log_q1.reshape(batch_size) + underflow_const
-    return torch.exp(s)
+    return np.exp(s)
 
 def pred(x):
     batch_size = x.size()[0]
@@ -237,18 +238,27 @@ def pred(x):
         y = i*torch.ones(128).type(torch.int64)
         #print(y)
         x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(x.to(device),y.to(device), manipulated=False)
+        
+        #convert tensors to numpy
+        x_np = x.detach().cpu().numpy()
+        x_recon_np=x_recon.detach().cpu().numpy()
+        mu_q1_np=mu_q1.detach().cpu().numpy()
+        logvar_q1_np=logvar_q1.detach().cpu().numpy()
+        mu_q2_np=mu_q2.detach().cpu().numpy()
+        logvar_q2_np=logvar_q2.detach().cpu().numpy()
+        
         #m~q(m|x) for each batch
-        std_q2 = torch.exp(0.5*logvar_q2)
-        eps_q2 = torch.randn_like(std_q2)
-        m = mu_q2 + eps_q2*std_q2 #m size -> (#batch, sizeof(m)) = (#batch, 32)
-        #m = torch.zeros(x.size()[0], 32)
+        std_q2 = np.exp(0.5*logvar_q2_np)
+        eps_q2 = np.random.randn(*std_q2.shape)
+        m = mu_q2_np + eps_q2*std_q2 #m size -> (#batch, sizeof(m)) = (#batch, 32)
+        
         #calculate the log-ration term for each y = c(as an approximation to log p(x,y=c))
         sum = 0
         K = 20
         for j in range(0,K):
-            sum = sum + pred_logRatio(x.to(device), x_recon.to(device), mu_q1.to(device), logvar_q1.to(device), m.to(device))
+            sum = sum + pred_logRatio(x_np, x_recon_np, mu_q1_np, logvar_q1_np, m)
         #print(sum)
-        log_pxy = torch.log(sum).view(batch_size).detach().cpu().numpy()
+        log_pxy = np.log(sum).reshape(batch_size)
         yc[i] = log_pxy
     
     #print(yc)
@@ -277,7 +287,7 @@ if __name__ == "__main__":
     model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight.pt', map_location=device))
     model.eval()
 
-    """
+    
     a,y = next(iter(test_loader)) 
     print(y)
     #y[0] = 7
@@ -285,9 +295,11 @@ if __name__ == "__main__":
     #print(a)
 
     y_pred = pred(a)
-
+    print(y_pred)
+    print(accuracy(y,y_pred))
 
     y_temp = y.detach().cpu().numpy()
+    
     """
     temp = 0
     total_i = 0 
@@ -299,6 +311,8 @@ if __name__ == "__main__":
         total_i = total_i + i
         print(aa)
     print(temp/i)
+
+    """
 
     #print(x_recon[1])
     #save_image(a[8].view(1,28,28),'actual.png')
