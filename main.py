@@ -15,6 +15,10 @@ import math
 #    -----------------Helper Functions-----------------
 def log_gaussian(x,mean,var):
     std = math.sqrt(var)
+    return -torch.log(std*math.sqrt(2*math.pi)+1e-4) - 0.5*((x-mean)/(std+1e-4))**2
+
+def log_gausian_torch(x,mean,var):
+    std = torch.sqrt(var)
     return -math.log(std*math.sqrt(2*math.pi)+1e-4) - 0.5*((x-mean)/(std+1e-4))**2
 
 def accuracy(y_true, y_pred):
@@ -273,7 +277,7 @@ if __name__ == "__main__":
     
     #torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight.pt')
     
-    """
+    
     model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight.pt', map_location=device))
     model.eval()
 
@@ -291,7 +295,7 @@ if __name__ == "__main__":
     #print(x_recon[1])
     #save_image(a[8].view(1,28,28),'actual.png')
     #save_image(x_recon[8].view(1,28,28),'temp1.png')
-    """
+    
 
 
 
