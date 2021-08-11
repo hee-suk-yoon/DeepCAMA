@@ -15,11 +15,11 @@ import math
 #    -----------------Helper Functions-----------------
 def log_gaussian(x,mean,var):
     std = math.sqrt(var)
-    return -torch.log(std*math.sqrt(2*math.pi)+1e-4) - 0.5*((x-mean)/(std+1e-4))**2
+    return -math.log(std*math.sqrt(2*math.pi)+1e-4) - 0.5*((x-mean)/(std+1e-4))**2
 
 def log_gausian_torch(x,mean,var):
     std = torch.sqrt(var)
-    return -math.log(std*math.sqrt(2*math.pi)+1e-4) - 0.5*((x-mean)/(std+1e-4))**2
+    return -torch.log(std*math.sqrt(2*math.pi)+1e-4) - 0.5*((x-mean)/(std+1e-4))**2
 
 def accuracy(y_true, y_pred):
     #y_true and y_pred is assumed to be numpy array.
@@ -201,19 +201,23 @@ def pred_logRatio(x, x_recon, mu_q1, logvar_q1, m):
     #sample from z~q(z|x,y,m)
     std_q1 = torch.exp(0.5*logvar_q1)
     eps_q1 = torch.randn_like(std_q1)
-    z = mu_q1 + eps_q1*std_q1 #size of z -> (#batch_size, sizeof(z))
+    z = (mu_q1 + eps_q1*std_q1) #size of z -> (#batch_size, sizeof(z))
 
     #calculate log q(z|x,y,m)
-    log_q1 = torch.zeros((batch_size,1))
+    #log_q1 = torch.zeros((batch_size,1))
+    temp = log_gausian_torch(z,mu_q1,torch.exp(logvar_q1))
+    log_q1 = torch.sum(temp, dim =1)
+    #log_q1 = log_q1.cpu()
+    """
     for i in range(0,batch_size):
         sum_temp = 0
         for j in range(0,mu_q1.size()[1]):
             temp = log_gaussian(z[i][j].item(),mu_q1[i][j].item(),math.exp(logvar_q1[i][j].item()))
             sum_temp = sum_temp + temp
         log_q1[i][0] = sum_temp
-    
+    """
     #calculate log p(x|y,z,m)
-    log_pxyzm = torch.zeros((x.size()[0],1)) 
+    log_pxyzm = torch.zeros((x.size()[0],1)).to(device)
     for i in range(0,batch_size):
         log_pxyzm[i][0] = torch.sum(torch.mul(x[i].view(-1,784), torch.log(x_recon[i].view(-1,784)+1e-4)) + torch.mul(1-x[i].view(-1,784), torch.log(1-x[i].view(-1,784)+1e-4)))
 
@@ -221,6 +225,12 @@ def pred_logRatio(x, x_recon, mu_q1, logvar_q1, m):
     py = 0.1
     
     #calculate log p(z)
+    zero_tensor = torch.zeros(z.size()).to(device)
+    one_tensor = torch.ones(z.size()).to(device)
+    temp = log_gausian_torch(z,zero_tensor,one_tensor)
+    log_pz = torch.sum(temp, dim = 1)
+
+    """
     log_pz = torch.zeros((batch_size,1))
     for i in range(0,batch_size):
         sum_temp = 0
@@ -228,10 +238,12 @@ def pred_logRatio(x, x_recon, mu_q1, logvar_q1, m):
             temp = log_gaussian(z[i][j].item(),0,1)
             sum_temp = sum_temp + temp
         log_pz[i][0] = sum_temp
+    """
 
     #adding a constant at the end to prevent underflow. The term will not affect the overall calculation due to the softmax.
     underflow_const = 100
     s = log_pxyzm.reshape(batch_size) + math.log(py) + log_pz.reshape(batch_size) - log_q1.reshape(batch_size) + underflow_const
+   
     return torch.exp(s)
 
 def pred(x):
@@ -251,6 +263,7 @@ def pred(x):
         K = 20
         for j in range(0,K):
             sum = sum + pred_logRatio(x.to(device), x_recon.to(device), mu_q1.to(device), logvar_q1.to(device), m.to(device))
+            #print(j)
         #print(sum)
         log_pxy = torch.log(sum).view(x.size()[0]).detach().cpu().numpy()
         yc[i] = log_pxy
