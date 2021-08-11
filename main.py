@@ -248,7 +248,7 @@ def pred(x):
         for j in range(0,K):
             sum = sum + pred_logRatio(x.to(device), x_recon.to(device), mu_q1.to(device), logvar_q1.to(device), m.to(device))
         #print(sum)
-        log_pxy = torch.log(sum).view(batch_size).detach().cpu().numpy()
+        log_pxy = torch.log(sum).view(x.size()[0]).detach().cpu().numpy()
         yc[i] = log_pxy
     
     #print(yc)
@@ -277,7 +277,6 @@ if __name__ == "__main__":
     model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight.pt', map_location=device))
     model.eval()
 
-    """
     a,y = next(iter(test_loader)) 
     print(y)
     #y[0] = 7
@@ -288,18 +287,7 @@ if __name__ == "__main__":
 
 
     y_temp = y.detach().cpu().numpy()
-    """
-    temp = 0
-    total_i = 0 
-    for i, (data, y) in enumerate(test_loader):
-        y_pred = pred(data)
-        y_temp = y.detach().cpu().numpy()
-        aa = accuracy(y_temp,y_pred)
-        temp = temp + aa
-        total_i = total_i + i
-        print(aa)
-    print(temp/i)
-
+    print(accuracy(y_temp,y_pred))
     #print(x_recon[1])
     #save_image(a[8].view(1,28,28),'actual.png')
     #save_image(x_recon[8].view(1,28,28),'temp1.png')
