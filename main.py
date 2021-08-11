@@ -268,10 +268,10 @@ def pred(x):
 
 if __name__ == "__main__":
     
-    for epoch in range(1, args.epochs + 1):
-        train(epoch)
+    #for epoch in range(1, args.epochs + 1):
+    #    train(epoch)
     
-    torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight.pt')
+    #torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight.pt')
     
     """
     model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight.pt', map_location=device))
