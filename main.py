@@ -239,7 +239,7 @@ def pred(x):
         #m = torch.zeros(x.size()[0], 32)
         #calculate the log-ration term for each y = c(as an approximation to log p(x,y=c))
         sum = 0
-        K = 20
+        K = 100
         for j in range(0,K):
             sum = sum + pred_logRatio(x.to(device), x_recon.to(device), mu_q1.to(device), logvar_q1.to(device), m.to(device))
             #print(j)
