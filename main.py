@@ -258,7 +258,11 @@ def pred(x):
         for j in range(0,K):
             sum = sum + pred_logRatio(x_np, x_recon_np, mu_q1_np, logvar_q1_np, m)
         #print(sum)
+<<<<<<< HEAD
         log_pxy = np.log(sum).reshape(batch_size)
+=======
+        log_pxy = torch.log(sum).view(x.size()[0]).detach().cpu().numpy()
+>>>>>>> parent of f57ae2f (before changing tensor to numpy)
         yc[i] = log_pxy
     
     #print(yc)
@@ -287,7 +291,10 @@ if __name__ == "__main__":
     model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight.pt', map_location=device))
     model.eval()
 
+<<<<<<< HEAD
     
+=======
+>>>>>>> parent of f57ae2f (before changing tensor to numpy)
     a,y = next(iter(test_loader)) 
     print(y)
     #y[0] = 7
@@ -299,6 +306,7 @@ if __name__ == "__main__":
     print(accuracy(y,y_pred))
 
     y_temp = y.detach().cpu().numpy()
+<<<<<<< HEAD
     
     """
     temp = 0
@@ -314,6 +322,9 @@ if __name__ == "__main__":
 
     """
 
+=======
+    print(accuracy(y_temp,y_pred))
+>>>>>>> parent of f57ae2f (before changing tensor to numpy)
     #print(x_recon[1])
     #save_image(a[8].view(1,28,28),'actual.png')
     #save_image(x_recon[8].view(1,28,28),'temp1.png')
