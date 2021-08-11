@@ -34,7 +34,7 @@ def accuracy(y_true, y_pred):
 parser = argparse.ArgumentParser(description='DeepCAMA MNIST Example')
 parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 128)')
-parser.add_argument('--epochs', type=int, default=30, metavar='N',
+parser.add_argument('--epochs', type=int, default=80, metavar='N',
                     help='number of epochs to train (default: 10)')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='disables CUDA training')
@@ -156,7 +156,7 @@ class DeepCAMA(nn.Module):
 
 
 model = DeepCAMA().to(device)
-optimizer = optim.Adam(model.parameters(), lr=1e-5)
+optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
 # Reconstruction + KL divergence losses summed over all elements and batch
 def loss_function(recon_x, x, y, mu_q1, logvar_q1, mu_q2, logvar_q2):
@@ -268,12 +268,12 @@ def pred(x):
 
 if __name__ == "__main__":
     
-    #for epoch in range(1, args.epochs + 1):
-    #    train(epoch)
+    for epoch in range(1, args.epochs + 1):
+        train(epoch)
     
-    #torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight.pt')
+    torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight.pt')
     
-    
+    """
     model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight.pt', map_location=device))
     model.eval()
 
@@ -284,13 +284,17 @@ if __name__ == "__main__":
     #print(a)
 
     y_pred = pred(a)
-
+    print(y_pred)
 
     y_temp = y.detach().cpu().numpy()
     print(accuracy(y_temp,y_pred))
     #print(x_recon[1])
     #save_image(a[8].view(1,28,28),'actual.png')
     #save_image(x_recon[8].view(1,28,28),'temp1.png')
+    """
+
+
+
     """
     x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(a.to(device),y.to(device), manipulated=False)
     save_image(x_recon[0].view(1,28,28),'temp2.png')
