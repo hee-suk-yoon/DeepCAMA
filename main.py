@@ -52,7 +52,7 @@ def shift_image(x,y,width_shift_val,height_shift_val):
     return X,Y
 #  ----------------------------------------------------
 
-
+#  ----------------------------------------------------
 parser = argparse.ArgumentParser(description='DeepCAMA MNIST Example')
 parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 128)')
@@ -80,6 +80,8 @@ test_data = datasets.MNIST('./data/train/', train=False, transform=transforms.To
 train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, **kwargs)
 val_lodaer = torch.utils.data.DataLoader(val_data, batch_size=args.batch_size, shuffle=True, **kwargs)
 test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.batch_size, shuffle=True, **kwargs)
+# ------------------------------------------------------\
+
 
 class DeepCAMA(nn.Module):
     def __init__(self):
@@ -165,7 +167,6 @@ class DeepCAMA(nn.Module):
         #q(m|x)
         mu_q2, logvar_q2 = self.encode2(x)
         m = self.reparameterize(mu_q2, logvar_q2)
-        print(m.size())
         if not manipulated:
             m = m.zero_()
 
@@ -261,8 +262,6 @@ def pred(x):
         K = 100
         for j in range(0,K):
             sum = sum + pred_logRatio(x.to(device), x_recon.to(device), mu_q1.to(device), logvar_q1.to(device), m.to(device))
-            #print(j)
-        #print(sum)
         log_pxy = torch.log(sum).view(x.size()[0]).detach().cpu().numpy()
         yc[i] = log_pxy
     
@@ -283,23 +282,24 @@ def pred(x):
 
 if __name__ == "__main__":
     
-    for epoch in range(1, args.epochs + 1):
-        train(epoch)
+    #for epoch in range(1, args.epochs + 1):
+    #    train(epoch)
     
-    torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight.pt')
+    #torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight.pt')
     
-    """
+    
     model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight.pt', map_location=device))
     model.eval()
 
+    """
     a,y = next(iter(test_loader)) 
-    print(y)
+    #print(y)
     #y[0] = 7
     x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(a.to(device),y.to(device), manipulated=False)
     #print(a)
 
     y_pred = pred(a)
-    print(y_pred)
+    #print(y_pred)
 
     y_temp = y.detach().cpu().numpy()
     print(accuracy(y_temp,y_pred))
@@ -308,8 +308,17 @@ if __name__ == "__main__":
     #save_image(x_recon[8].view(1,28,28),'temp1.png')
     """
 
-
-
+    temp = 0
+    total_i = 0 
+    for i, (data, y) in enumerate(test_loader):
+        if (data.size()[0] == args.batch_size): #resolve last batch issue later.
+            y_pred = pred(data)
+            y_temp = y.detach().cpu().numpy()
+            aa = accuracy(y_temp,y_pred)
+            temp = temp + aa
+            total_i = total_i + 1
+            print(aa)
+    print(temp/total_i)
     """
     x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(a.to(device),y.to(device), manipulated=False)
     save_image(x_recon[0].view(1,28,28),'temp2.png')
