@@ -11,7 +11,6 @@ import numpy as np
 import scipy.stats
 import math
 
-
 #    -----------------Helper Functions-----------------
 def log_gaussian(x,mean,var):
     std = math.sqrt(var)
@@ -35,21 +34,31 @@ def accuracy(y_true, y_pred):
 
 def shift_image(x,y,width_shift_val,height_shift_val):
     #x is assumed to be a tensor of shape (#batch_size, #channels, width, height) = (#batch size, 1, 28, 28)
-    #y is assumed to be a tensor of shape (#batch_size, 1)
-    x = x.detach().cpu().numpy().reshape(x.size()[0],28,28)
-    y = y.detach().cpu().numpy().reshape(y.size()[0])
+    #y is assumed to be a tensor of shape (#batch_size)
+    batch_size = x.size()[0]
+    x = x.detach().cpu().numpy().reshape(batch_size,28,28)
+    y = y.detach().cpu().numpy().reshape(batch_size)
 
     # import relevant library
     from tensorflow.keras.preprocessing.image import ImageDataGenerator
     # create the class object
     datagen = ImageDataGenerator(width_shift_range=width_shift_val, height_shift_range=height_shift_val)
     # fit the generator
-    datagen.fit(x.reshape(x.shape[0], 28, 28, 1))
+    datagen.fit(x.reshape(batch_size, 28, 28, 1))
 
-    a = datagen.flow(x.reshape(x.shape[0], 28, 28, 1),y.reshape(y.shape[0], 1),batch_size=x.shape[0],shuffle=False)
+    a = datagen.flow(x.reshape(batch_size, 28, 28, 1),y.reshape(batch_size, 1),batch_size=batch_size,shuffle=False)
 
-    X, Y = next(iter(a))     
+    X, Y = next(iter(a))   
+    X = torch.from_numpy(X).view(batch_size,1,28,28)
+    Y = torch.from_numpy(Y).view(batch_size)
+
     return X,Y
+
+def shift_image_v2(x,y,width_shift_val,height_shift_Val):
+    batch_size = x.size()[0]
+    x = x.detach().cpu().numpy().reshape(batch_size,28,28)
+    y = y.detach().cpu().numpy().reshape(batch_size)
+    return
 #  ----------------------------------------------------
 
 #  ----------------------------------------------------
@@ -310,15 +319,27 @@ if __name__ == "__main__":
 
     temp = 0
     total_i = 0 
-    for i, (data, y) in enumerate(test_loader):
-        if (data.size()[0] == args.batch_size): #resolve last batch issue later.
-            y_pred = pred(data)
-            y_temp = y.detach().cpu().numpy()
-            aa = accuracy(y_temp,y_pred)
-            temp = temp + aa
-            total_i = total_i + 1
-            print(aa)
-    print(temp/total_i)
+    vertical_shift_range = np.arange(start=0.0,stop=1.0,step=0.1)
+    accuracy_list = [0]*vertical_shift_range.shape[0]
+    index = 0
+    for vsr in vertical_shift_range:
+        for i, (data, y) in enumerate(test_loader):
+            if (data.size()[0] == args.batch_size): #resolve last batch issue later.
+                data, y = shift_image(x=data,y=y,width_shift_val=0.0,height_shift_val=vsr)
+                y_pred = pred(data)
+                y_temp = y.detach().cpu().numpy()
+                aa = accuracy(y_temp,y_pred)
+                temp = temp + aa
+                total_i = total_i + 1
+                #print(aa)
+        print(temp/total_i)
+        accuracy_list[index] = temp/total_i
+        index = index + 1 
+        #print(temp/total_i)
+    print(accuracy)
+    
+    plt.plot(vertical_shift_range,accuracy_list)
+    plt.show()
     """
     x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(a.to(device),y.to(device), manipulated=False)
     save_image(x_recon[0].view(1,28,28),'temp2.png')
