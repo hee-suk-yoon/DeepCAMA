@@ -147,6 +147,7 @@ class DeepCAMA(nn.Module):
         #q(m|x)
         mu_q2, logvar_q2 = self.encode2(x)
         m = self.reparameterize(mu_q2, logvar_q2)
+        print(m.size())
         if not manipulated:
             m = m.zero_()
 
@@ -264,12 +265,12 @@ def pred(x):
 
 if __name__ == "__main__":
     
-    #for epoch in range(1, args.epochs + 1):
-    #    train(epoch)
+    for epoch in range(1, args.epochs + 1):
+        train(epoch)
     
-    #torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight.pt')
+    torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight.pt')
     
-    
+    """
     model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight.pt', map_location=device))
     model.eval()
 
@@ -287,7 +288,7 @@ if __name__ == "__main__":
     #print(x_recon[1])
     #save_image(a[8].view(1,28,28),'actual.png')
     #save_image(x_recon[8].view(1,28,28),'temp1.png')
-    
+    """
 
 
 
