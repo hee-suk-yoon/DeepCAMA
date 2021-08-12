@@ -69,7 +69,7 @@ def shift_image_v2(x,y,width_shift_val,height_shift_Val):
 parser = argparse.ArgumentParser(description='DeepCAMA MNIST Example')
 parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 128)')
-parser.add_argument('--epochs', type=int, default=600, metavar='N',
+parser.add_argument('--epochs', type=int, default=100, metavar='N',
                     help='number of epochs to train (default: 10)')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='disables CUDA training')
@@ -192,8 +192,7 @@ class DeepCAMA(nn.Module):
         return x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2
 
 
-model = DeepCAMA().to(device)
-optimizer = optim.Adam(model.parameters(), lr=(1e-4+1e-5)/2)
+
 
 # Reconstruction + KL divergence losses summed over all elements and batch
 def loss_function(recon_x, x, y, mu_q1, logvar_q1, mu_q2, logvar_q2):
@@ -272,7 +271,7 @@ def pred(x):
         #m = torch.zeros(x.size()[0], 32)
         #calculate the log-ration term for each y = c(as an approximation to log p(x,y=c))
         sum = 0
-        K = 200
+        K = 100
         for j in range(0,K):
             sum = sum + pred_logRatio(x.to(device), x_recon.to(device), mu_q1.to(device), logvar_q1.to(device), m.to(device))
         log_pxy = torch.log(sum).view(x.size()[0]).detach().cpu().numpy()
@@ -291,18 +290,20 @@ def pred(x):
     return label
     
 
-
+model = DeepCAMA().to(device)
+#model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight3.pt', map_location=device))
+optimizer = optim.Adam(model.parameters(), lr=(1e-4+1e-5)/2)
 
 if __name__ == "__main__":
     
     #for epoch in range(1, args.epochs + 1):
     #    train(epoch)
     
-    #torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight3.pt') #ephochs : 300, lr (1e-4+1e-5)/2, Loss:89
+    #torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight3_2.pt') #ephochs : 300, lr (1e-4+1e-5)/2, Loss:89
     #torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight4.pt') #ephochs : 600    ""                   87.1662
     
-    #model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight3.pt', map_location=device))
-    #model.eval()
+    model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight3_2.pt', map_location=device))
+    model.eval()
 
     """
     a,y = next(iter(test_loader)) 
@@ -325,19 +326,18 @@ if __name__ == "__main__":
     
     
     
-    """
+    
     temp = 0
     total_i = 0 
     vertical_shift_range = np.arange(start=0.0,stop=1.0,step=0.1)
-    print(vertical_shift_range)
     accuracy_list = [0]*vertical_shift_range.shape[0]
     index = 0
     for vsr in vertical_shift_range:
-        if (vsr <= 0.21 and vsr >= 0.19):
+        if (vsr <= 0.11 and vsr >= 0.09):
             print('here')
             for i, (data, y) in enumerate(test_loader):
                 if (data.size()[0] == args.batch_size): #resolve last batch issue later.
-                    data, y = shift_image(x=data,y=y,width_shift_val=0.0,height_shift_val=vsr)
+                    data, y = shift_image(x=data,y=y,width_shift_val=0.0,height_shift_val=0.6)
                     y_pred = pred(data)
                     y_temp = y.detach().cpu().numpy()
                     aa = accuracy(y_temp,y_pred)
@@ -352,7 +352,7 @@ if __name__ == "__main__":
     
     plt.plot(vertical_shift_range,accuracy_list)
     plt.show()
-    """
+    
     
     
     
