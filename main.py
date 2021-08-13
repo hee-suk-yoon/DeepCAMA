@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats
 import math
+from MNIST_shift import shift_image_v2
 
 
 #    -----------------Helper Functions-----------------
@@ -55,15 +56,6 @@ def shift_image(x,y,width_shift_val,height_shift_val):
 
     return X,Y
 
-def shift_image_v2(x,y,width_shift_val,height_shift_Val):
-    batch_size = x.size()[0]
-    x = x.detach().cpu().numpy().reshape(batch_size,28,28)
-    y = y.detach().cpu().numpy().reshape(batch_size)
-    
-    shift_width_pixel = round(28*width_shift_val)
-    shift_height_pixel = round(28*height_shift_Val)
-    
-    return
 #  ----------------------------------------------------
 
 #  ----------------------------------------------------
@@ -292,7 +284,6 @@ def pred(x):
     
 
 model = DeepCAMA().to(device)
-model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight3.pt', map_location=device))
 optimizer = optim.Adam(model.parameters(), lr=(1e-4+1e-5)/2)
 
 if __name__ == "__main__":
@@ -301,10 +292,10 @@ if __name__ == "__main__":
     #    train(epoch)
     
     #torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight3_2.pt') #ephochs : 300, lr (1e-4+1e-5)/2, Loss:89
-    #torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight4.pt') #ephochs : 600    ""                   87.1662
-    
+    #torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight.pt') #ephochs : 600    ""                   87.1662
+    model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight3_2.pt', map_location=device))
     #model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight3.pt', map_location=device))
-    #model.eval()
+    model.eval()
 
     """
     a,y = next(iter(test_loader)) 
@@ -335,24 +326,25 @@ if __name__ == "__main__":
     for vsr in vertical_shift_range:
         temp = 0
         total_i = 0
-        if (vsr <= 0.11 and vsr >= 0.09):
+        #if (vsr <= 0.11 and vsr >= 0.09):
                 #print('here')
 
-            for i, (data, y) in enumerate(test_loader):
-                if (data.size()[0] == args.batch_size): #resolve last batch issue later.
-                    data, y = shift_image(x=data,y=y,width_shift_val=0.0,height_shift_val=0.2)
-                    y_pred = pred(data)
-                    y_temp = y.detach().cpu().numpy()
-                    aa = accuracy(y_temp,y_pred)
-                    temp = temp + aa
-                    total_i = total_i + 1
-                    #print(aa)
-            print(temp/total_i)
-            accuracy_list[index] = temp/total_i
-            index = index + 1 
-            print(temp/total_i)
+        for i, (data, y) in enumerate(test_loader):
+            if (data.size()[0] == args.batch_size): #resolve last batch issue later.
+                #data, y = shift_image(x=data,y=y,width_shift_val=0.0,height_shift_val=vsr)
+                data, y = shift_image_v2(x=data,y=y,width_shift_val=0.0,height_shift_val=vsr)
+                y_pred = pred(data)
+                y_temp = y.detach().cpu().numpy()
+                aa = accuracy(y_temp,y_pred)
+                temp = temp + aa
+                total_i = total_i + 1
+                #print(aa)
+        print(temp/total_i)
+        accuracy_list[index] = temp/total_i
+        index = index + 1 
+        print(temp/total_i)
     #print(accuracy)
-    np.save('OurWoFineVer_weight5.npy', accuracy_list)
+    #np.save('OurWoFineClean_weight3_2(3).npy', accuracy_list)
     plt.plot(vertical_shift_range,accuracy_list)
     plt.show()
     
