@@ -11,14 +11,7 @@ import numpy as np
 import scipy.stats
 import math
 
-<<<<<<< HEAD
-# save numpy array as npy file
-from numpy import asarray
-from numpy import save
 
-
-=======
->>>>>>> parent of fdd6b34 (.)
 #    -----------------Helper Functions-----------------
 def log_gaussian(x,mean,var):
     std = math.sqrt(var)
@@ -299,7 +292,7 @@ def pred(x):
     
 
 model = DeepCAMA().to(device)
-#model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight3.pt', map_location=device))
+model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight3.pt', map_location=device))
 optimizer = optim.Adam(model.parameters(), lr=(1e-4+1e-5)/2)
 
 if __name__ == "__main__":
@@ -310,8 +303,8 @@ if __name__ == "__main__":
     #torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight3_2.pt') #ephochs : 300, lr (1e-4+1e-5)/2, Loss:89
     #torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight4.pt') #ephochs : 600    ""                   87.1662
     
-    #model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight5.pt', map_location=device))
-    model.eval()
+    #model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight3.pt', map_location=device))
+    #model.eval()
 
     """
     a,y = next(iter(test_loader)) 
@@ -334,27 +327,20 @@ if __name__ == "__main__":
     
     
     
-    
     temp = 0
     total_i = 0 
     vertical_shift_range = np.arange(start=0.0,stop=1.0,step=0.1)
     accuracy_list = [0]*vertical_shift_range.shape[0]
     index = 0
     for vsr in vertical_shift_range:
+        temp = 0
+        total_i = 0
         if (vsr <= 0.11 and vsr >= 0.09):
-<<<<<<< HEAD
                 #print('here')
-            temp = 0
-            total_i = 0
+
             for i, (data, y) in enumerate(test_loader):
                 if (data.size()[0] == args.batch_size): #resolve last batch issue later.
                     data, y = shift_image(x=data,y=y,width_shift_val=0.0,height_shift_val=0.2)
-=======
-            print('here')
-            for i, (data, y) in enumerate(test_loader):
-                if (data.size()[0] == args.batch_size): #resolve last batch issue later.
-                    data, y = shift_image(x=data,y=y,width_shift_val=0.0,height_shift_val=0.6)
->>>>>>> parent of fdd6b34 (.)
                     y_pred = pred(data)
                     y_temp = y.detach().cpu().numpy()
                     aa = accuracy(y_temp,y_pred)
@@ -364,15 +350,9 @@ if __name__ == "__main__":
             print(temp/total_i)
             accuracy_list[index] = temp/total_i
             index = index + 1 
-<<<<<<< HEAD
             print(temp/total_i)
     #print(accuracy)
     np.save('OurWoFineVer_weight5.npy', accuracy_list)
-=======
-            #print(temp/total_i)
-    #print(accuracy)
-    
->>>>>>> parent of fdd6b34 (.)
     plt.plot(vertical_shift_range,accuracy_list)
     plt.show()
     
