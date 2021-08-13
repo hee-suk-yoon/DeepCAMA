@@ -206,6 +206,7 @@ def train(epoch):
     model.eval()
     train_loss = 0
     for batch_id,  (data,y) in enumerate(train_loader):
+        data, y = shift_image(x=data,y=y,width_shift_val=0.0,height_shift_val=0.9)
         data = data.to(device)
         y = y.to(device)
         optimizer.zero_grad()
@@ -292,14 +293,14 @@ optimizer = optim.Adam(model.parameters(), lr=(1e-4+1e-5)/2)
 
 if __name__ == "__main__":
     
-    #for epoch in range(1, args.epochs + 1):
-    #    train(epoch)
+    for epoch in range(1, args.epochs + 1):
+        train(epoch)
     
     #torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight3_2.pt') #ephochs : 300, lr (1e-4+1e-5)/2, Loss:89
-    #torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight4.pt') #ephochs : 600    ""                   87.1662
+    torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight5.pt') #ephochs : 600    ""                   87.1662
     
-    model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight5.pt', map_location=device))
-    model.eval()
+    #model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight3_2.pt', map_location=device))
+    #model.eval()
 
     """
     a,y = next(iter(test_loader)) 
@@ -323,7 +324,7 @@ if __name__ == "__main__":
     
     
     
- 
+    """
     vertical_shift_range = np.arange(start=0.0,stop=1.0,step=0.1)
     accuracy_list = [0]*vertical_shift_range.shape[0]
     index = 0
@@ -346,10 +347,10 @@ if __name__ == "__main__":
         index = index + 1 
         print(temp/total_i)
     #print(accuracy)
-    np.save('OurWoFineVer_weight5.npy', accuracy_list)
+    np.save('OurWoFineClean_weight3_2.npy', accuracy_list)
     plt.plot(vertical_shift_range,accuracy_list)
     plt.show()
-    
+    """
     
     
     
