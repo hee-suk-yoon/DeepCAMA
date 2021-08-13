@@ -11,6 +11,14 @@ import numpy as np
 import scipy.stats
 import math
 
+# save numpy array as npy file
+from numpy import asarray
+from numpy import save
+
+
+# save numpy array as npy file
+from numpy import asarray
+from numpy import save
 #    -----------------Helper Functions-----------------
 def log_gaussian(x,mean,var):
     std = math.sqrt(var)
@@ -54,15 +62,6 @@ def shift_image(x,y,width_shift_val,height_shift_val):
 
     return X,Y
 
-def shift_image_v2(x,y,width_shift_val,height_shift_Val):
-    batch_size = x.size()[0]
-    x = x.detach().cpu().numpy().reshape(batch_size,28,28)
-    y = y.detach().cpu().numpy().reshape(batch_size)
-    
-    shift_width_pixel = round(28*width_shift_val)
-    shift_height_pixel = round(28*height_shift_Val)
-    
-    return
 #  ----------------------------------------------------
 
 #  ----------------------------------------------------
@@ -327,29 +326,30 @@ if __name__ == "__main__":
     
     
     
-    temp = 0
-    total_i = 0 
+ 
     vertical_shift_range = np.arange(start=0.0,stop=1.0,step=0.1)
     accuracy_list = [0]*vertical_shift_range.shape[0]
     index = 0
     for vsr in vertical_shift_range:
-        if (vsr <= 0.11 and vsr >= 0.09):
-            print('here')
-            for i, (data, y) in enumerate(test_loader):
-                if (data.size()[0] == args.batch_size): #resolve last batch issue later.
-                    data, y = shift_image(x=data,y=y,width_shift_val=0.0,height_shift_val=0.6)
-                    y_pred = pred(data)
-                    y_temp = y.detach().cpu().numpy()
-                    aa = accuracy(y_temp,y_pred)
-                    temp = temp + aa
-                    total_i = total_i + 1
-                    #print(aa)
-            print(temp/total_i)
-            accuracy_list[index] = temp/total_i
-            index = index + 1 
-            #print(temp/total_i)
+        #if (vsr <= 0.11 and vsr >= 0.09):
+            #print('here')
+        temp = 0
+        total_i = 0
+        for i, (data, y) in enumerate(test_loader):
+            if (data.size()[0] == args.batch_size): #resolve last batch issue later.
+                data, y = shift_image(x=data,y=y,width_shift_val=0.0,height_shift_val=vsr)
+                y_pred = pred(data)
+                y_temp = y.detach().cpu().numpy()
+                aa = accuracy(y_temp,y_pred)
+                temp = temp + aa
+                total_i = total_i + 1
+                #print(aa)
+        print(temp/total_i)
+        accuracy_list[index] = temp/total_i
+        index = index + 1 
+        print(temp/total_i)
     #print(accuracy)
-    
+    np.save('OurWoFineClean_weight3_2.npy', accuracy_list)
     plt.plot(vertical_shift_range,accuracy_list)
     plt.show()
     
