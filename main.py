@@ -221,6 +221,7 @@ def train(epoch):
           epoch, train_loss / len(train_loader.dataset)))
     return
 
+
 def pred_logRatio(x, x_recon, mu_q1, logvar_q1, m):
     batch_size = x.size()[0]
     #sample from z~q(z|x,y,m)
@@ -233,7 +234,10 @@ def pred_logRatio(x, x_recon, mu_q1, logvar_q1, m):
     log_q1 = torch.sum(temp, dim =1)
 
     #calculate log p(x|y,z,m)
-    log_pxyzm = torch.sum(torch.mul(x.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x.view(-1,784), torch.log(1-x.view(-1,784)+1e-4)), dim=1)
+    #log_pxyzm = torch.sum(torch.mul(x.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x.view(-1,784), torch.log(1-x.view(-1,784)+1e-4)), dim=1)
+    log_pxyzm = torch.sum(torch.mul(x.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x.view(-1,784), torch.log(1-x_recon.view(-1,784)+1e-4)), dim=1)
+    #temp_print = F.binary_cross_entropy(x_recon.view(-1,784),x.view(-1,784),reduction = 'sum')
+
 
     #calculate p(y)
     py = 0.1
