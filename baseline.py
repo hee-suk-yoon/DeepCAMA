@@ -108,7 +108,7 @@ class DeepCAMABaseline(nn.Module):
         self.fc2 = nn.Linear(512,256)
         self.fc3 = nn.Linear(256,126)
         self.fc4 = nn.Linear(126,512)
-        self.fc5 = nn.Linear(512,28*28)
+        self.fc5 = nn.Linear(512, 10)
         self.d1 = nn.Dropout(p=0.25)
         self.d2 = nn.Dropout(p=0.5)
 
@@ -146,9 +146,12 @@ def train(epoch):
           epoch, train_loss / len(train_loader.dataset)))
     return
 
-def pred(y):
-
-    return 
+def pred(x):
+    out = model(x.to(device))
+    #y = y.detach().cpu().numpy()
+    out = out.detach().cpu().numpy()
+    label = np.argmax(out,axis = 1)
+    return label
     
 
 model = DeepCAMABaseline().to(device)
@@ -156,10 +159,41 @@ optimizer = optim.Adam(model.parameters(), lr=(1e-4+1e-5)/2)
 loss_function = nn.CrossEntropyLoss()
 
 if __name__ == "__main__":
+    vertical_shift_range = np.arange(start=0.0,stop=1.0,step=0.1)
+    accuracy_list = [0]*vertical_shift_range.shape[0]
     if args.train:
         for epoch in range(1, args.epochs + 1):
             train(epoch)
-        torch.save(model.state_dict(), '/media/hsy/DeepCAMA/baseline.pt') 
+        torch.save(model.state_dict(), 'baseline.pt') 
+    else:
+        index = 0
+        model.load_state_dict(torch.load('baseline.pt', map_location=device))
+        model.eval()
+        for vsr in vertical_shift_range:
+            temp = 0
+            total_i = 0
+            #if (vsr <= 0.11 and vsr >= 0.09):
+                    #print('here')
+
+            for i, (data, y) in enumerate(test_loader):
+                if (data.size()[0] == args.batch_size): #resolve last batch issue later.
+                    data, y = shift_image_v2(x=data,y=y,width_shift_val=0.0,height_shift_val=vsr)
+                    y_pred = pred(data)
+                    #print(y,y_pred)
+                    #print(y_pred)
+                    y_temp = y.detach().cpu().numpy()
+                    aa = accuracy(y_temp,y_pred)
+                    temp = temp + aa
+                    total_i = total_i + 1
+                    #print(aa)
+            print(temp/total_i)
+            accuracy_list[index] = temp/total_i
+            index = index + 1 
+            print(temp/total_i)
+        #print(accuracy)
+        np.save('BaselineTestVer.npy', accuracy_list)
+        plt.plot(vertical_shift_range,accuracy_list)
+        plt.show()
         
     
     
