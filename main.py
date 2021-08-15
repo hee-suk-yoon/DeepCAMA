@@ -34,27 +34,15 @@ def accuracy(y_true, y_pred):
 
     return correct/y_true.shape[0]
 
-def shift_image(x,y,width_shift_val,height_shift_val):
-    #x is assumed to be a tensor of shape (#batch_size, #channels, width, height) = (#batch size, 1, 28, 28)
-    #y is assumed to be a tensor of shape (#batch_size)
-    batch_size = x.size()[0]
-    x = x.detach().cpu().numpy().reshape(batch_size,28,28)
-    y = y.detach().cpu().numpy().reshape(batch_size)
-
-    # import relevant library
-    from tensorflow.keras.preprocessing.image import ImageDataGenerator
-    # create the class object
-    datagen = ImageDataGenerator(width_shift_range=width_shift_val, height_shift_range=height_shift_val)
-    # fit the generator
-    datagen.fit(x.reshape(batch_size, 28, 28, 1))
-
-    a = datagen.flow(x.reshape(batch_size, 28, 28, 1),y.reshape(batch_size, 1),batch_size=batch_size,shuffle=False)
-
-    X, Y = next(iter(a))   
-    X = torch.from_numpy(X).view(batch_size,1,28,28)
-    Y = torch.from_numpy(Y).view(batch_size)
-
-    return X,Y
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
 
 #  ----------------------------------------------------
 
@@ -86,6 +74,10 @@ test_data = datasets.MNIST('./data/train/', train=False, transform=transforms.To
 train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, **kwargs)
 val_lodaer = torch.utils.data.DataLoader(val_data, batch_size=args.batch_size, shuffle=True, **kwargs)
 test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.batch_size, shuffle=True, **kwargs)
+
+
+train_loader_FT = torch.utils.data.DataLoader(train_data, batch_size=128, shuffle=True, **kwargs)
+test_loader_FT = torch.utils.data.DataLoader(test_data, batch_size=128, shuffle=True, **kwargs)
 # ------------------------------------------------------\
 
 
@@ -199,6 +191,18 @@ def loss_function(recon_x, x, y, mu_q1, logvar_q1, mu_q2, logvar_q2):
 
     return BCE  + KLD
 
+#Equation (8). The loss function used for fine tuning
+def loss_function_FT(x_train, y_train, x_test):
+    train_batch_size = x_train.size()[0]
+    test_batch_size = x_test.size()[0]
+
+    alpha = train_batch_size/(train_batch_size+test_batch_size)
+    ELBO_xy_calc = ELBO_xy(x_train,y_train)
+    ELBO_x_calc = ELBO_x(x_test)
+
+    loss = alpha*(1/train_batch_size)*ELBO_xy_calc + (1-alpha)*(1/test_batch_size)*ELBO_x_calc
+    return loss
+
 def train(epoch):
     model.eval()
     train_loss = 0
@@ -220,6 +224,36 @@ def train(epoch):
     print('====> Epoch: {} Average loss: {:.4f}'.format(
           epoch, train_loss / len(train_loader.dataset)))
     return
+
+def ELBO_xy(x, y):
+    #Calculates [ELBO(x,y)]
+    #x and y should already be in device. 
+    x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(x,y,manipulated=True)
+
+    #p(y)
+    py = 0.1
+
+    #calculate  E_q(z,m|x,y)[(log p(x|y,z,m))]. We do monte carlo estimation with just one sample since the batch is large enough.
+    BCE = torch.sum(torch.mul(x.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x.view(-1,784), torch.log(1-x_recon.view(-1,784)+1e-4)), dim=1)
+
+    #calculate -1/N sum_N KL(q(z,m|x,y))
+    logvar_cat = torch.cat((logvar_q1, logvar_q2), dim = 1)
+    mu_cat = torch.cat((mu_q1, mu_q2), dim = 1)
+    KLD =  0.5 * torch.sum(1 + logvar_cat - mu_cat.pow(2) - logvar_cat.exp(), dim=1)
+
+    return math.log(py) + BCE + KLD
+
+def ELBO_x(x):
+    #Calculates ELBO(x)
+    yc = torch.ones(x.size()[0]).to(device).type(torch.int64)
+
+    sum = torch.zeros(x.size()[0],1).to(device)
+    for i in range(0,10):
+        yc = i*yc
+        #ELBO(x,yc)
+        sum = sum + torch.exp(ELBO_xy(x,yc))
+
+    return torch.log(sum) 
 
 
 def pred_logRatio(x, x_recon, mu_q1, logvar_q1, m):
@@ -258,9 +292,9 @@ def pred(x):
     batch_size = x.size()[0]
     yc = np.zeros((10,batch_size))
     for i in range(0,10):
-        y = i*torch.ones(128).type(torch.int64)
+        y = i*torch.ones(batch_size).type(torch.int64).to(device)
         #print(y)
-        x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(x.to(device),y.to(device), manipulated=False)
+        x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(x,y, manipulated=False)
         #m~q(m|x) for each batch
         std_q2 = torch.exp(0.5*logvar_q2)
         eps_q2 = torch.randn_like(std_q2)
@@ -270,7 +304,8 @@ def pred(x):
         sum = 0
         K = 100
         for j in range(0,K):
-            sum = sum + pred_logRatio(x.to(device), x_recon.to(device), mu_q1.to(device), logvar_q1.to(device), m.to(device))
+            #sum = sum + pred_logRatio(x.to(device), x_recon.to(device), mu_q1.to(device), logvar_q1.to(device), m.to(device))
+            sum = sum + pred_logRatio(x, x_recon, mu_q1, logvar_q1, m)
         log_pxy = torch.log(sum).view(x.size()[0]).detach().cpu().numpy()
         yc[i] = log_pxy
     
@@ -334,33 +369,26 @@ if __name__ == "__main__":
                 #print('here')
 
         for i, (data, y) in enumerate(test_loader):
-            if (data.size()[0] == args.batch_size): #resolve last batch issue later.
+            #if (data.size()[0] == args.batch_size): #resolve last batch issue later.
                 #data, y = shift_image(x=data,y=y,width_shift_val=0.0,height_shift_val=vsr)
-                data, y = shift_image_v2(x=data,y=y,width_shift_val=0.0,height_shift_val=vsr)
-                y_pred = pred(data)
-                y_temp = y.detach().cpu().numpy()
-                aa = accuracy(y_temp,y_pred)
-                temp = temp + aa
-                total_i = total_i + 1
+            data = data.to(device)
+            #y = y.to(device)
+            data, y = shift_image_v2(x=data,y=y,width_shift_val=0.0,height_shift_val=vsr)
+            y_pred = pred(data)
+            y_temp = y.detach().cpu().numpy()
+            aa = accuracy(y_temp,y_pred)
+            temp = temp + aa
+            total_i = total_i + 1
                 #print(aa)
         print(temp/total_i)
         accuracy_list[index] = temp/total_i
         index = index + 1 
         print(temp/total_i)
     #print(accuracy)
-    #np.save('OurWoFineClean_weight3_2(3).npy', accuracy_list)
+   #np.save('OurWoFineClean_weight3_2.npy', accuracy_list)
     plt.plot(vertical_shift_range,accuracy_list)
     plt.show()
     
     
     
     
-    
-    """
-    x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(a.to(device),y.to(device), manipulated=False)
-    save_image(x_recon[0].view(1,28,28),'temp2.png')
-    x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(a.to(device),y.to(device), manipulated=False)
-    save_image(x_recon[0].view(1,28,28),'temp3.png')
-    x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(a.to(device),y.to(device), manipulated=False)
-    save_image(x_recon[0].view(1,28,28),'temp4.png')
-    """
