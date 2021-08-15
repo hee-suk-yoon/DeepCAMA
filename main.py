@@ -10,41 +10,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats
 import math
-from MNIST_shift import shift_image_v2
+from util import *
 
-
-#    -----------------Helper Functions-----------------
-def log_gaussian(x,mean,var):
-    std = math.sqrt(var)
-    return -math.log(std*math.sqrt(2*math.pi)+1e-4) - 0.5*((x-mean)/(std+1e-4))**2
-
-def log_gausian_torch(x,mean,var):
-    std = torch.sqrt(var)
-    return -torch.log(std*math.sqrt(2*math.pi)+1e-4) - 0.5*((x-mean)/(std+1e-4))**2
-
-def accuracy(y_true, y_pred):
-    #y_true and y_pred is assumed to be numpy array.
-    y_true = y_true.reshape(-1).astype(int)
-    y_pred = y_pred.reshape(-1).astype(int)
-
-    correct = 0
-    for i in range(0,y_true.shape[0]):
-        if y_true[i] == y_pred[i]:
-            correct = correct + 1
-
-    return correct/y_true.shape[0]
-
-def str2bool(v):
-    if isinstance(v, bool):
-        return v
-    if v.lower() in ('yes', 'true', 't', 'y', '1'):
-        return True
-    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
-        return False
-    else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
-
-#  ----------------------------------------------------
 
 #  ----------------------------------------------------
 parser = argparse.ArgumentParser(description='DeepCAMA MNIST Example')
@@ -256,71 +223,9 @@ def ELBO_x(x):
     return torch.log(sum) 
 
 
-def pred_logRatio(x, x_recon, mu_q1, logvar_q1, m):
-    batch_size = x.size()[0]
-    #sample from z~q(z|x,y,m)
-    std_q1 = torch.exp(0.5*logvar_q1)
-    eps_q1 = torch.randn_like(std_q1)
-    z = (mu_q1 + eps_q1*std_q1) #size of z -> (#batch_size, sizeof(z))
-
-    #calculate log q(z|x,y,m)
-    temp = log_gausian_torch(z,mu_q1,torch.exp(logvar_q1))
-    log_q1 = torch.sum(temp, dim =1)
-
-    #calculate log p(x|y,z,m)
-    #log_pxyzm = torch.sum(torch.mul(x.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x.view(-1,784), torch.log(1-x.view(-1,784)+1e-4)), dim=1)
-    log_pxyzm = torch.sum(torch.mul(x.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x.view(-1,784), torch.log(1-x_recon.view(-1,784)+1e-4)), dim=1)
-    #temp_print = F.binary_cross_entropy(x_recon.view(-1,784),x.view(-1,784),reduction = 'sum')
 
 
-    #calculate p(y)
-    py = 0.1
-    
-    #calculate log p(z)
-    zero_tensor = torch.zeros(z.size()).to(device)
-    one_tensor = torch.ones(z.size()).to(device)
-    temp = log_gausian_torch(z,zero_tensor,one_tensor)
-    log_pz = torch.sum(temp, dim = 1)
 
-    #adding a constant at the end to prevent underflow. The term will not affect the overall calculation due to the softmax.
-    underflow_const = 100
-    s = log_pxyzm.reshape(batch_size) + math.log(py) + log_pz.reshape(batch_size) - log_q1.reshape(batch_size) + underflow_const
-   
-    return torch.exp(s)
-
-def pred(x):
-    batch_size = x.size()[0]
-    yc = np.zeros((10,batch_size))
-    for i in range(0,10):
-        y = i*torch.ones(batch_size).type(torch.int64).to(device)
-        #print(y)
-        x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(x,y, manipulated=False)
-        #m~q(m|x) for each batch
-        std_q2 = torch.exp(0.5*logvar_q2)
-        eps_q2 = torch.randn_like(std_q2)
-        m = mu_q2 + eps_q2*std_q2 #m size -> (#batch, sizeof(m)) = (#batch, 32)
-        #m = torch.zeros(x.size()[0], 32)
-        #calculate the log-ration term for each y = c(as an approximation to log p(x,y=c))
-        sum = 0
-        K = 100
-        for j in range(0,K):
-            #sum = sum + pred_logRatio(x.to(device), x_recon.to(device), mu_q1.to(device), logvar_q1.to(device), m.to(device))
-            sum = sum + pred_logRatio(x, x_recon, mu_q1, logvar_q1, m)
-        log_pxy = torch.log(sum).view(x.size()[0]).detach().cpu().numpy()
-        yc[i] = log_pxy
-    
-    #print(yc)
-    exp_yc = np.exp(yc)
-    #print(exp_yc)
-    sum_exp_yc = np.sum(exp_yc,axis=0)
-
-    for i in range(0,batch_size):
-        for j in range(0,10):
-            exp_yc[j][i] = exp_yc[j][i]/sum_exp_yc[i]
-
-    label = np.argmax(exp_yc,axis=0)
-    return label
-    
 
 model = DeepCAMA().to(device)
 optimizer = optim.Adam(model.parameters(), lr=(1e-4+1e-5)/2)
@@ -373,8 +278,8 @@ if __name__ == "__main__":
                 #data, y = shift_image(x=data,y=y,width_shift_val=0.0,height_shift_val=vsr)
             data = data.to(device)
             #y = y.to(device)
-            data, y = shift_image_v2(x=data,y=y,width_shift_val=0.0,height_shift_val=vsr)
-            y_pred = pred(data)
+            data, y = shift_image(x=data,y=y,width_shift_val=0.0,height_shift_val=vsr)
+            y_pred = pred(data,model,device)
             y_temp = y.detach().cpu().numpy()
             aa = accuracy(y_temp,y_pred)
             temp = temp + aa
