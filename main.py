@@ -15,6 +15,8 @@ from util import *
 
 #  ----------------------------------------------------
 parser = argparse.ArgumentParser(description='DeepCAMA MNIST Example')
+parser.add_argument('--train', type=str2bool, required=True, metavar='T/F')
+parser.add_argument('--train-save', type=str2bool, default=False, metavar='T/F')
 parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 128)')
 parser.add_argument('--epochs', type=int, default=100, metavar='N',
@@ -143,9 +145,6 @@ class DeepCAMA(nn.Module):
         x_recon = self.decode(y,z,m)
         return x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2
 
-
-
-
 # Reconstruction + KL divergence losses summed over all elements and batch
 def loss_function(recon_x, x, y, mu_q1, logvar_q1, mu_q2, logvar_q2):
     BCE = F.binary_cross_entropy(recon_x.view(-1,784), x.view(-1, 784), reduction='sum')
@@ -192,87 +191,13 @@ def train(epoch):
           epoch, train_loss / len(train_loader.dataset)))
     return
 
-def ELBO_xy(x, y):
-    #Calculates [ELBO(x,y)]
-    #x and y should already be in device. 
-    x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(x,y,manipulated=True)
-
-    #p(y)
-    py = 0.1
-
-    #calculate  E_q(z,m|x,y)[(log p(x|y,z,m))]. We do monte carlo estimation with just one sample since the batch is large enough.
-    BCE = torch.sum(torch.mul(x.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x.view(-1,784), torch.log(1-x_recon.view(-1,784)+1e-4)), dim=1)
-
-    #calculate -1/N sum_N KL(q(z,m|x,y))
-    logvar_cat = torch.cat((logvar_q1, logvar_q2), dim = 1)
-    mu_cat = torch.cat((mu_q1, mu_q2), dim = 1)
-    KLD =  0.5 * torch.sum(1 + logvar_cat - mu_cat.pow(2) - logvar_cat.exp(), dim=1)
-
-    return math.log(py) + BCE + KLD
-
-def ELBO_x(x):
-    #Calculates ELBO(x)
-    yc = torch.ones(x.size()[0]).to(device).type(torch.int64)
-
-    sum = torch.zeros(x.size()[0],1).to(device)
-    for i in range(0,10):
-        yc = i*yc
-        #ELBO(x,yc)
-        sum = sum + torch.exp(ELBO_xy(x,yc))
-
-    return torch.log(sum) 
-
-
-
-
-
-
-model = DeepCAMA().to(device)
-optimizer = optim.Adam(model.parameters(), lr=(1e-4+1e-5)/2)
-
-if __name__ == "__main__":
-    
-    #for epoch in range(1, args.epochs + 1):
-    #    train(epoch)
-    
-    #torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight3_2.pt') #ephochs : 300, lr (1e-4+1e-5)/2, Loss:89
-    #torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight.pt') #ephochs : 600    ""                   87.1662
-    model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight3_2.pt', map_location=device))
-    #model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight3.pt', map_location=device))
-    model.eval()
-
-    """
-    a,y = next(iter(test_loader)) 
-    #print(y)
-    #y[0] = 7
-    x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(a.to(device),y.to(device), manipulated=False)
-    #print(a)
-
-    y_pred = pred(a)
-    #print(y_pred)
-
-    y_temp = y.detach().cpu().numpy()
-    print(accuracy(y_temp,y_pred))
-    #print(x_recon[1])
-    #save_image(a[8].view(1,28,28),'actual.png')
-    #save_image(x_recon[8].view(1,28,28),'temp1.png')
-    """
-    
-    
-    
-    
-    
-    temp = 0
-    total_i = 0 
+def test():
     vertical_shift_range = np.arange(start=0.0,stop=1.0,step=0.1)
     accuracy_list = [0]*vertical_shift_range.shape[0]
     index = 0
     for vsr in vertical_shift_range:
         temp = 0
         total_i = 0
-        #if (vsr <= 0.11 and vsr >= 0.09):
-                #print('here')
-
         for i, (data, y) in enumerate(test_loader):
             #if (data.size()[0] == args.batch_size): #resolve last batch issue later.
                 #data, y = shift_image(x=data,y=y,width_shift_val=0.0,height_shift_val=vsr)
@@ -280,16 +205,32 @@ if __name__ == "__main__":
             #y = y.to(device)
             data, y = shift_image(x=data,y=y,width_shift_val=0.0,height_shift_val=vsr)
             y_pred = pred(data,model,device)
-            y_temp = y.detach().cpu().numpy()
-            aa = accuracy(y_temp,y_pred)
-            temp = temp + aa
+            y_true = y.detach().cpu().numpy()
+            temp = temp + accuracy(y_true,y_pred)
             total_i = total_i + 1
                 #print(aa)
         print(temp/total_i)
         accuracy_list[index] = temp/total_i
         index = index + 1 
         print(temp/total_i)
-    #print(accuracy)
+    return accuracy_list
+
+model = DeepCAMA().to(device)
+optimizer = optim.Adam(model.parameters(), lr=(1e-4+1e-5)/2)
+if __name__ == "__main__":
+
+    if args.train:
+        for epoch in range(1, args.epochs + 1):
+            train(epoch)
+        if args.train_save:
+            torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight.pt') 
+    
+    else:
+        model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight3_2.pt', map_location=device))
+        model.eval()
+        accuracy = test()
+ 
+    print(accuracy)
    #np.save('OurWoFineClean_weight3_2.npy', accuracy_list)
     plt.plot(vertical_shift_range,accuracy_list)
     plt.show()

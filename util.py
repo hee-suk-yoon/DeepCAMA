@@ -112,4 +112,34 @@ def pred_logRatio(x, x_recon, mu_q1, logvar_q1, m, device):
    
     return torch.exp(s)
 
+def ELBO_x(x,model,device):
+    #Calculates ELBO(x)
+    yc = torch.ones(x.size()[0]).to(device).type(torch.int64)
+
+    sum = torch.zeros(x.size()[0],1).to(device)
+    for i in range(0,10):
+        yc = i*yc
+        #ELBO(x,yc)
+        sum = sum + torch.exp(ELBO_xy(x,yc,model))
+
+    return torch.log(sum) 
+
+def ELBO_xy(x, y, model):
+    #Calculates ELBO(x,y)
+    #x and y should already be in device. 
+    x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(x,y,manipulated=True)
+
+    #p(y)
+    py = 0.1
+
+    #calculate  E_q(z,m|x,y)[(log p(x|y,z,m))]. We do monte carlo estimation with just one sample since the batch is large enough.
+    BCE = torch.sum(torch.mul(x.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x.view(-1,784), torch.log(1-x_recon.view(-1,784)+1e-4)), dim=1)
+
+    #calculate -1/N sum_N KL(q(z,m|x,y))
+    logvar_cat = torch.cat((logvar_q1, logvar_q2), dim = 1)
+    mu_cat = torch.cat((mu_q1, mu_q2), dim = 1)
+    KLD =  0.5 * torch.sum(1 + logvar_cat - mu_cat.pow(2) - logvar_cat.exp(), dim=1)
+
+    return math.log(py) + BCE + KLD
+
 
