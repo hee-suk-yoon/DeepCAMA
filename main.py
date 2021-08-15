@@ -17,6 +17,7 @@ from util import *
 parser = argparse.ArgumentParser(description='DeepCAMA MNIST Example')
 parser.add_argument('--train', type=str2bool, required=True, metavar='T/F')
 parser.add_argument('--train-save', type=str2bool, default=False, metavar='T/F')
+parser.add_argument('--finetune', type=str2bool, default=False, metavar='T/F')
 parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 128)')
 parser.add_argument('--epochs', type=int, default=100, metavar='N',
@@ -54,7 +55,7 @@ class DeepCAMA(nn.Module):
     def __init__(self):
         super(DeepCAMA, self).__init__()
 
-        #network for q(m|x)
+        #network for q(m|x) (will this part activated during FineTune)
         self.qmx_conv1 = nn.Conv2d(in_channels=1, out_channels=64, kernel_size=(3,3), stride=1, padding='same')
         self.qmx_conv2 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(3,3), stride=1, padding='same')
         self.qmx_conv3 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(3,3), stride=1, padding='same')
@@ -74,14 +75,18 @@ class DeepCAMA(nn.Module):
         self.qzxym_fc32 = nn.Linear(500,64)
 
         #network for p(x|y,z,m)
+        #NNpY
         self.p_fc1 = nn.Linear(10,500)
         self.p_fc2 = nn.Linear(500,500)
+        #NNpZ
         self.p_fc3 = nn.Linear(64,500)
         self.p_fc4 = nn.Linear(500,500)
+        #NNpM (will leave this part activated during FineTune)
         self.p_fc5 = nn.Linear(32,500)
         self.p_fc6 = nn.Linear(500,500)
         self.p_fc7 = nn.Linear(500,500)
         self.p_fc8 = nn.Linear(500,500)
+
         self.p_projection = nn.Linear(1500,4*4*64,bias=False)
         self.deconv1 = nn.ConvTranspose2d(in_channels=64,out_channels=64,kernel_size=3,padding=1,output_padding=0,stride=2)
         self.deconv2 = nn.ConvTranspose2d(in_channels=64,out_channels=64,kernel_size=3,padding=1,output_padding=1,stride=2)
@@ -193,6 +198,10 @@ def train(epoch):
 
 def test():
     vertical_shift_range = np.arange(start=0.0,stop=1.0,step=0.1)
+    if args.finetune:
+        for name, param in model.named_parameters():
+            param.requires_grad = False
+
     accuracy_list = [0]*vertical_shift_range.shape[0]
     index = 0
     for vsr in vertical_shift_range:
@@ -218,7 +227,10 @@ def test():
 model = DeepCAMA().to(device)
 optimizer = optim.Adam(model.parameters(), lr=(1e-4+1e-5)/2)
 if __name__ == "__main__":
-
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            print(name)
+    """
     if args.train:
         for epoch in range(1, args.epochs + 1):
             train(epoch)
@@ -229,11 +241,11 @@ if __name__ == "__main__":
         model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight3_2.pt', map_location=device))
         model.eval()
         accuracy = test()
- 
+    """
     print(accuracy)
-   #np.save('OurWoFineClean_weight3_2.npy', accuracy_list)
-    plt.plot(vertical_shift_range,accuracy_list)
-    plt.show()
+    #np.save('OurWoFineClean_weight3_2.npy', accuracy_list)
+    #plt.plot(vertical_shift_range,accuracy_list)
+    #plt.show()
     
     
     
