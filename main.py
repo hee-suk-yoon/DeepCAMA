@@ -54,12 +54,6 @@ test_loader_FT = torch.utils.data.DataLoader(test_data, batch_size=128, shuffle=
 class DeepCAMA(nn.Module):
     def __init__(self):
         super(DeepCAMA, self).__init__()
-        #test
-        self.aa = nn.Sequential(
-        nn.Conv2d(1,20,5),
-        nn.ReLU(),
-        nn.Conv2d(20,64,5),
-        nn.ReLU())
         #network for q(m|x) (will this part activated during FineTune)
         self.qmx_conv1 = nn.Conv2d(in_channels=1, out_channels=64, kernel_size=(3,3), stride=1, padding='same')
         self.qmx_conv2 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(3,3), stride=1, padding='same')
@@ -201,12 +195,41 @@ def train(epoch):
           epoch, train_loss / len(train_loader.dataset)))
     return
 
+qmx = [
+        'qmx_conv1.weight',
+        'qmx_conv1.bias',
+        'qmx_conv2.weight',
+        'qmx_conv2.bias',
+        'qmx_conv3.weight',
+        'qmx_conv3.bias',
+        'qmx_fc1.weight',
+        'qmx_fc1.bias',
+        'qmx_fc21.weight',
+        'qmx_fc21.bias',
+        'qmx_fc22.weight',
+        'qmx_fc22.bias'
+    ]
+
+NNpM = [
+        'p_fc5.weight'
+        'p_fc5.bias'
+        'p_fc6.weight'
+        'p_fc6.bias'
+        'p_fc7.weight'
+        'p_fc7.bias'
+        'p_fc8.weight'
+        'p_fc8.bias'
+    ]
+
 def test():
     vertical_shift_range = np.arange(start=0.0,stop=1.0,step=0.1)
     if args.finetune:
         for name, param in model.named_parameters():
             #if name == ''
-            param.requires_grad = False
+            if (name in qmx) or (name in NNpM):
+                param.requires_grad = True
+            else:
+                param.requires_grad = False
 
     accuracy_list = [0]*vertical_shift_range.shape[0]
     index = 0
@@ -233,8 +256,13 @@ def test():
 model = DeepCAMA().to(device)
 optimizer = optim.Adam(model.parameters(), lr=(1e-4+1e-5)/2)
 if __name__ == "__main__":
+    #for name, param in model.named_parameters():
+    #    if param.requires_grad:
+    #        print(name)
+
+
     for name, param in model.named_parameters():
-        if param.requires_grad:
+        if name in a:
             print(name)
     """
     if args.train:
