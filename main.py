@@ -220,16 +220,19 @@ NNpM = [
         'p_fc8.weight'
         'p_fc8.bias'
     ]
+def finetune():
+    for name, param in model.named_parameters():
+        #if name == ''
+        if (name in qmx) or (name in NNpM):
+            param.requires_grad = True
+        else:
+            param.requires_grad = False
 
+    return
 def test():
     vertical_shift_range = np.arange(start=0.0,stop=1.0,step=0.1)
     if args.finetune:
-        for name, param in model.named_parameters():
-            #if name == ''
-            if (name in qmx) or (name in NNpM):
-                param.requires_grad = True
-            else:
-                param.requires_grad = False
+        finetune()
 
     accuracy_list = [0]*vertical_shift_range.shape[0]
     index = 0
@@ -260,10 +263,6 @@ if __name__ == "__main__":
     #    if param.requires_grad:
     #        print(name)
 
-
-    for name, param in model.named_parameters():
-        if name in a:
-            print(name)
     """
     if args.train:
         for epoch in range(1, args.epochs + 1):
