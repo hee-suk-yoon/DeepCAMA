@@ -54,7 +54,12 @@ test_loader_FT = torch.utils.data.DataLoader(test_data, batch_size=128, shuffle=
 class DeepCAMA(nn.Module):
     def __init__(self):
         super(DeepCAMA, self).__init__()
-
+        #test
+        self.aa = nn.Sequential(
+        nn.Conv2d(1,20,5),
+        nn.ReLU(),
+        nn.Conv2d(20,64,5),
+        nn.ReLU())
         #network for q(m|x) (will this part activated during FineTune)
         self.qmx_conv1 = nn.Conv2d(in_channels=1, out_channels=64, kernel_size=(3,3), stride=1, padding='same')
         self.qmx_conv2 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(3,3), stride=1, padding='same')
@@ -200,6 +205,7 @@ def test():
     vertical_shift_range = np.arange(start=0.0,stop=1.0,step=0.1)
     if args.finetune:
         for name, param in model.named_parameters():
+            #if name == ''
             param.requires_grad = False
 
     accuracy_list = [0]*vertical_shift_range.shape[0]
