@@ -116,7 +116,7 @@ def ELBO_x(x,model,device):
     #Calculates ELBO(x)
     yc = torch.ones(x.size()[0]).to(device).type(torch.int64)
 
-    sum = torch.zeros(x.size()[0],1).to(device)
+    sum = torch.zeros(x.size()[0]).to(device)
     for i in range(0,10):
         yc = i*yc
         #ELBO(x,yc)

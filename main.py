@@ -167,10 +167,9 @@ def loss_function_FT(x_train, y_train, x_test):
     test_batch_size = x_test.size()[0]
 
     alpha = train_batch_size/(train_batch_size+test_batch_size)
-    ELBO_xy_calc = ELBO_xy(x_train,y_train)
-    ELBO_x_calc = ELBO_x(x_test)
-
-    loss = alpha*(1/train_batch_size)*ELBO_xy_calc + (1-alpha)*(1/test_batch_size)*ELBO_x_calc
+    ELBO_xy_calc = ELBO_xy(x_train,y_train, model)
+    ELBO_x_calc = ELBO_x(x_test,model,device)
+    loss = alpha*(1/train_batch_size)*torch.sum(ELBO_xy_calc) + (1-alpha)*(1/test_batch_size)*torch.sum(ELBO_x_calc)
     return loss
 
 def train(epoch):
@@ -220,21 +219,48 @@ NNpM = [
         'p_fc8.weight'
         'p_fc8.bias'
     ]
-def finetune():
-    for name, param in model.named_parameters():
-        #if name == ''
-        if (name in qmx) or (name in NNpM):
-            param.requires_grad = True
-        else:
-            param.requires_grad = False
+def finetune(epoch,ready):
+    if not(ready):
+        print('here not ready')
+        for name, param in model.named_parameters():
+            #if name == ''
+            if (name in qmx) or (name in NNpM):
+                param.requires_grad = True
+            else:
+                param.requires_grad = False
 
+        for i, (data_FT, y_dummy) in enumerate(test_loader_FT):
+            data_FT, y_dummy = shift_image(x=data_FT,y=y_dummy,width_shift_val=0.0,height_shift_val=0.9)
+            data_FT = data_FT.to(device)
+            y_dummy = y_dummy.to(device)
+            break
+        ready = True
+    
+    model.train()
+    FT_loss = 0 
+    for batch_id,  (data_train,y_train) in enumerate(train_loader_FT):
+        data_train = data_train.to(device)
+        y_train = y_train.to(device)
+        optimizer.zero_grad()
+        loss = loss_function_FT(data_train,y_train,data_FT)
+        loss.backward()
+        FT_loss += loss.item()
+        optimizer.step()
+        if batch_id  % args.log_interval == 0:
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                epoch, batch_id * len(data_train), len(train_loader_FT.dataset),
+                100. * batch_id / len(train_loader_FT),
+                loss.item() / len(data_train)))
     return
-    ##
+
 def test():
     vertical_shift_range = np.arange(start=0.0,stop=1.0,step=0.1)
     if args.finetune:
-        finetune()
+        ready = False
+        for epoch in range(1,51):
+            finetune(epoch,ready)
 
+    model.eval()
     accuracy_list = [0]*vertical_shift_range.shape[0]
     index = 0
     for vsr in vertical_shift_range:
@@ -264,7 +290,7 @@ if __name__ == "__main__":
     #    if param.requires_grad:
     #        print(name)
 
-    """
+    
     if args.train:
         for epoch in range(1, args.epochs + 1):
             train(epoch)
@@ -275,7 +301,7 @@ if __name__ == "__main__":
         model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight3_2.pt', map_location=device))
         model.eval()
         accuracy = test()
-    """
+    
     print(accuracy)
     #np.save('OurWoFineClean_weight3_2.npy', accuracy_list)
     #plt.plot(vertical_shift_range,accuracy_list)
