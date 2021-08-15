@@ -229,6 +229,7 @@ def finetune():
             param.requires_grad = False
 
     return
+    ##
 def test():
     vertical_shift_range = np.arange(start=0.0,stop=1.0,step=0.1)
     if args.finetune:
