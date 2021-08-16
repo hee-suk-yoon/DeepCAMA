@@ -131,18 +131,24 @@ class DeepCAMA(nn.Module):
     def forward(self, x,y, manipulated):
         #x shape -> (#batch, channels=1, width, height)
         #y shape -> (#batch)
+        #print(y)
+        
         y = y.view(-1,1) #y shape -> (#batch, 1(which is the label))
         y = F.one_hot(y,num_classes=10).view(-1,10) #y shape -> (#batch, 10)
         y = y.to(torch.float32)
-
+        #print(y.size())
         #q(m|x)
+        #print(x.size())
         mu_q2, logvar_q2 = self.encode2(x)
+        #print(mu_q2)
         m = self.reparameterize(mu_q2, logvar_q2)
+        #print(m)
         if not manipulated:
             m = m.zero_()
-
+        #print(m)
         #(q(z|x,y,m))
         mu_q1, logvar_q1 = self.encode1(x,y,m)
+        #print(mu_q1)
         z = self.reparameterize(mu_q1, logvar_q1)
 
         #p(x|y,z,m)
@@ -161,16 +167,6 @@ def loss_function(recon_x, x, y, mu_q1, logvar_q1, mu_q2, logvar_q2):
 
     return BCE  + KLD
 
-#Equation (8). The loss function used for fine tuning
-def loss_function_FT(x_train, y_train, x_test):
-    train_batch_size = x_train.size()[0]
-    test_batch_size = x_test.size()[0]
-
-    alpha = train_batch_size/(train_batch_size+test_batch_size)
-    ELBO_xy_calc = ELBO_xy(x_train,y_train, model)
-    ELBO_x_calc = ELBO_x(x_test,model,device)
-    loss = alpha*(1/train_batch_size)*torch.sum(ELBO_xy_calc) + (1-alpha)*(1/test_batch_size)*torch.sum(ELBO_x_calc)
-    return loss
 
 def train(epoch):
     model.eval()
@@ -219,23 +215,33 @@ NNpM = [
         'p_fc8.weight'
         'p_fc8.bias'
     ]
+#Equation (8). The loss function used for fine tuning
+def loss_function_FT(x_train, y_train, x_test):
+    train_batch_size = x_train.size()[0]
+    test_batch_size = x_test.size()[0]
+    alpha = train_batch_size/(train_batch_size+test_batch_size)
+    #print(y_train)
+    ELBO_xy_calc = ELBO_xy(x_train,y_train, model)
+    ELBO_x_calc = ELBO_x(x_test,model,device)
+
+    loss = alpha*(1/train_batch_size)*torch.sum(ELBO_xy_calc) + (1-alpha)*(1/test_batch_size)*torch.sum(ELBO_x_calc)
+    return -loss
+
 def finetune(epoch,ready):
     if not(ready):
-        print('here not ready')
         for name, param in model.named_parameters():
             #if name == ''
             if (name in qmx) or (name in NNpM):
                 param.requires_grad = True
             else:
                 param.requires_grad = False
-
+        
         for i, (data_FT, y_dummy) in enumerate(test_loader_FT):
             data_FT, y_dummy = shift_image(x=data_FT,y=y_dummy,width_shift_val=0.0,height_shift_val=0.9)
             data_FT = data_FT.to(device)
             y_dummy = y_dummy.to(device)
             break
         ready = True
-    
     model.train()
     FT_loss = 0 
     for batch_id,  (data_train,y_train) in enumerate(train_loader_FT):
@@ -257,7 +263,7 @@ def test():
     vertical_shift_range = np.arange(start=0.0,stop=1.0,step=0.1)
     if args.finetune:
         ready = False
-        for epoch in range(1,51):
+        for epoch in range(1,6):
             finetune(epoch,ready)
 
     model.eval()
@@ -290,7 +296,7 @@ if __name__ == "__main__":
     #    if param.requires_grad:
     #        print(name)
 
-    
+    torch.autograd.set_detect_anomaly(True)
     if args.train:
         for epoch in range(1, args.epochs + 1):
             train(epoch)

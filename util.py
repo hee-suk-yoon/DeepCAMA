@@ -114,15 +114,14 @@ def pred_logRatio(x, x_recon, mu_q1, logvar_q1, m, device):
 
 def ELBO_x(x,model,device):
     #Calculates ELBO(x)
-    yc = torch.ones(x.size()[0]).to(device).type(torch.int64)
-
     sum = torch.zeros(x.size()[0]).to(device)
     for i in range(0,10):
-        yc = i*yc
+        yc = i*torch.ones(x.size()[0]).type(torch.int64).to(device)
+
         #ELBO(x,yc)
         sum = sum + torch.exp(ELBO_xy(x,yc,model))
 
-    return torch.log(sum) 
+    return torch.log(sum+1e-4) #adding 1e-4 to prevent -inf (when sum goes to 0)
 
 def ELBO_xy(x, y, model):
     #Calculates ELBO(x,y)
