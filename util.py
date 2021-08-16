@@ -66,6 +66,7 @@ def pred(x,model,device):
             #sum = sum + pred_logRatio(x.to(device), x_recon.to(device), mu_q1.to(device), logvar_q1.to(device), m.to(device))
             sum = sum + pred_logRatio(x, x_recon, mu_q1, logvar_q1, m, device)
         log_pxy = torch.log(sum).view(x.size()[0]).detach().cpu().numpy()
+        #log_pxy = torch.log(sum+1e-4).view(x.size()[0]).detach().cpu().numpy()
         yc[i] = log_pxy
     
     #print(yc)
@@ -141,4 +142,10 @@ def ELBO_xy(x, y, model):
 
     return math.log(py) + BCE + KLD
 
+def ELBO_xym0(x, y, model):
+    #Calculates ELBO(x,y,do(m=0))
 
+    x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(x,y,manipulated=False)
+    BCE = torch.sum(torch.mul(x.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x.view(-1,784), torch.log(1-x_recon.view(-1,784)+1e-4)), dim=1)
+    KLD =  0.5 * torch.sum(1 + logvar_q1 - mu_q1.pow(2) - logvar_q1.exp(), dim=1)
+    return BCE + KLD + math.log(0.1)

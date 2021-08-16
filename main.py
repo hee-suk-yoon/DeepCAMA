@@ -219,12 +219,15 @@ NNpM = [
 def loss_function_FT(x_train, y_train, x_test):
     train_batch_size = x_train.size()[0]
     test_batch_size = x_test.size()[0]
-    alpha = train_batch_size/(train_batch_size+test_batch_size)
+    #alpha = train_batch_size/(train_batch_size+test_batch_size)
+    alpha = 0.7
     #print(y_train)
+    ELBO_xym0_calc = ELBO_xym0(x_train,y_train,model)
     ELBO_xy_calc = ELBO_xy(x_train,y_train, model)
     ELBO_x_calc = ELBO_x(x_test,model,device)
 
-    loss = alpha*(1/train_batch_size)*torch.sum(ELBO_xy_calc) + (1-alpha)*(1/test_batch_size)*torch.sum(ELBO_x_calc)
+    #loss = alpha*(1/train_batch_size)*torch.sum(ELBO_xy_calc) + (1-alpha)*(1/test_batch_size)*torch.sum(ELBO_x_calc)
+    loss = alpha*(1/train_batch_size)*torch.sum(ELBO_xym0_calc) + (1-alpha)*(1/test_batch_size)*torch.sum(ELBO_x_calc)
     return -loss
 
 def finetune(epoch,ready):
@@ -237,7 +240,7 @@ def finetune(epoch,ready):
                 param.requires_grad = False
         
         for i, (data_FT, y_dummy) in enumerate(test_loader_FT):
-            data_FT, y_dummy = shift_image(x=data_FT,y=y_dummy,width_shift_val=0.0,height_shift_val=0.9)
+            data_FT, y_dummy = shift_image(x=data_FT,y=y_dummy,width_shift_val=0.0,height_shift_val=0.3)
             data_FT = data_FT.to(device)
             y_dummy = y_dummy.to(device)
             break
@@ -247,11 +250,11 @@ def finetune(epoch,ready):
     for batch_id,  (data_train,y_train) in enumerate(train_loader_FT):
         data_train = data_train.to(device)
         y_train = y_train.to(device)
-        optimizer.zero_grad()
+        optimizer_FT.zero_grad()
         loss = loss_function_FT(data_train,y_train,data_FT)
         loss.backward()
         FT_loss += loss.item()
-        optimizer.step()
+        optimizer_FT.step()
         if batch_id  % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_id * len(data_train), len(train_loader_FT.dataset),
@@ -263,7 +266,7 @@ def test():
     vertical_shift_range = np.arange(start=0.0,stop=1.0,step=0.1)
     if args.finetune:
         ready = False
-        for epoch in range(1,6):
+        for epoch in range(1,11):
             finetune(epoch,ready)
 
     model.eval()
@@ -291,6 +294,7 @@ def test():
 
 model = DeepCAMA().to(device)
 optimizer = optim.Adam(model.parameters(), lr=(1e-4+1e-5)/2)
+optimizer_FT = optim.Adam(model.parameters(), lr = 1e-3)
 if __name__ == "__main__":
     #for name, param in model.named_parameters():
     #    if param.requires_grad:
