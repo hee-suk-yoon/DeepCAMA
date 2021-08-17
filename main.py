@@ -128,14 +128,19 @@ class DeepCAMA(nn.Module):
         k2 = F.relu(self.deconv2(k))
         return torch.sigmoid(self.deconv3(k2)) 
 
+    def onehot(self,y):
+        y_onehot = y.view(-1,1) #y shape -> (#batch, 1(which is the label))
+        y_onehot = F.one_hot(y_onehot,num_classes=10).view(-1,10) #y shape -> (#batch, 10)
+        y_onehot = y_onehot.to(torch.float32)
+        return y_onehot 
     def forward(self, x,y, manipulated):
         #x shape -> (#batch, channels=1, width, height)
         #y shape -> (#batch)
         #print(y)
         
-        y = y.view(-1,1) #y shape -> (#batch, 1(which is the label))
-        y = F.one_hot(y,num_classes=10).view(-1,10) #y shape -> (#batch, 10)
-        y = y.to(torch.float32)
+        y_onehot = y.view(-1,1) #y shape -> (#batch, 1(which is the label))
+        y_onehot = F.one_hot(y_onehot,num_classes=10).view(-1,10) #y shape -> (#batch, 10)
+        y_onehot = y_onehot.to(torch.float32)
         #print(y.size())
         #q(m|x)
         #print(x.size())
@@ -147,14 +152,14 @@ class DeepCAMA(nn.Module):
             m = m.zero_()
         #print(m)
         #(q(z|x,y,m))
-        mu_q1, logvar_q1 = self.encode1(x,y,m)
+        mu_q1, logvar_q1 = self.encode1(x,y_onehot,m)
         #print(mu_q1)
         z = self.reparameterize(mu_q1, logvar_q1)
 
         #p(x|y,z,m)
-        x_recon = self.decode(y,z,m)
+        x_recon = self.decode(y_onehot,z,m)
         return x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2, z
-
+    
 # Reconstruction + KL divergence losses summed over all elements and batch
 def loss_function(recon_x, x, y, mu_q1, logvar_q1, mu_q2, logvar_q2):
     BCE = F.binary_cross_entropy(recon_x.view(-1,784), x.view(-1, 784), reduction='sum')
@@ -224,7 +229,7 @@ def loss_function_FT(x_train, y_train, x_test):
     train_batch_size = x_train.size()[0]
     test_batch_size = x_test.size()[0]
     #alpha = train_batch_size/(train_batch_size+test_batch_size)
-    alpha = 0.9
+    alpha = 0.5
     #print(y_train)
     ELBO_xym0_calc = ELBO_xym0(x_train,y_train,model)
     ELBO_xy_calc = ELBO_xy(x_train,y_train, model)
@@ -279,24 +284,26 @@ def test():
     model.eval()
     accuracy_list = [0]*vertical_shift_range.shape[0]
     index = 0
-    for vsr in vertical_shift_range:
-        temp = 0
-        total_i = 0
-        for i, (data, y) in enumerate(test_loader):
-            #if (data.size()[0] == args.batch_size): #resolve last batch issue later.
-                #data, y = shift_image(x=data,y=y,width_shift_val=0.0,height_shift_val=vsr)
-            data = data.to(device)
-            #y = y.to(device)
-            data, y = shift_image(x=data,y=y,width_shift_val=0.0,height_shift_val=vsr)
-            y_pred = pred(data,model,device)
-            y_true = y.detach().cpu().numpy()
-            temp = temp + accuracy(y_true,y_pred)
-            total_i = total_i + 1
-                #print(aa)
-        print(temp/total_i)
-        accuracy_list[index] = temp/total_i
-        index = index + 1 
-        print(temp/total_i)
+    with torch.no_grad():
+        for vsr in vertical_shift_range:
+            temp = 0
+            total_i = 0
+            for i, (data, y) in enumerate(test_loader):
+                #print(i)
+                #if (data.size()[0] == args.batch_size): #resolve last batch issue later.
+                    #data, y = shift_image(x=data,y=y,width_shift_val=0.0,height_shift_val=vsr)
+                data = data.to(device)
+                #y = y.to(device)
+                data, y = shift_image(x=data,y=y,width_shift_val=0.0,height_shift_val=vsr)
+                y_pred = pred(data,model,device)
+                y_true = y.detach().cpu().numpy()
+                temp = temp + accuracy(y_true,y_pred)
+                total_i = total_i + 1
+                    #print(aa)
+            print(temp/total_i)
+            accuracy_list[index] = temp/total_i
+            index = index + 1 
+            print(temp/total_i)
     return accuracy_list
 
 model = DeepCAMA().to(device)
@@ -315,7 +322,7 @@ if __name__ == "__main__":
             torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight55.pt') 
     
     else:
-        model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight55.pt', map_location=device))
+        model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight3_2.pt', map_location=device))
         model.eval()
         accuracy = test()
     

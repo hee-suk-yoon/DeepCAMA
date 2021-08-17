@@ -53,18 +53,19 @@ def pred(x,model,device):
     for i in range(0,10):
         y = i*torch.ones(batch_size).type(torch.int64).to(device)
         #print(y)
-        x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(x,y, manipulated=False)
+        #x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(x,y, manipulated=False)
         #m~q(m|x) for each batch
-        std_q2 = torch.exp(0.5*logvar_q2)
-        eps_q2 = torch.randn_like(std_q2)
-        m = mu_q2 + eps_q2*std_q2 #m size -> (#batch, sizeof(m)) = (#batch, 32)
+        mu_q2, logvar_q2 = model.encode2(x)
+        m = model.reparameterize(mu_q2, logvar_q2)
         #m = torch.zeros(x.size()[0], 32)
         #calculate the log-ration term for each y = c(as an approximation to log p(x,y=c))
         sum = 0
-        K = 100
+        K = 30
         for j in range(0,K):
+            mu_q1, logvar_q1 = model.encode1(x,model.onehot(y),m)
+            z = model.reparameterize(mu_q1, logvar_q1)
             #sum = sum + pred_logRatio(x.to(device), x_recon.to(device), mu_q1.to(device), logvar_q1.to(device), m.to(device))
-            sum = sum + pred_logRatio(x, x_recon, mu_q1, logvar_q1, m, device)
+            sum = sum + pred_logRatio(x, y, z, m, mu_q1, logvar_q1, model, device)
         log_pxy = torch.log(sum).view(x.size()[0]).detach().cpu().numpy()
         #log_pxy = torch.log(sum+1e-4).view(x.size()[0]).detach().cpu().numpy()
         yc[i] = log_pxy
@@ -81,19 +82,17 @@ def pred(x,model,device):
     label = np.argmax(exp_yc,axis=0)
     return label
 
-def pred_logRatio(x, x_recon, mu_q1, logvar_q1, m, device):
+def pred_logRatio(x, y, z_sampled, m_sampled, mu_q1, logvar_q1, model, device):
     batch_size = x.size()[0]
     #sample from z~q(z|x,y,m)
-    std_q1 = torch.exp(0.5*logvar_q1)
-    eps_q1 = torch.randn_like(std_q1)
-    z = (mu_q1 + eps_q1*std_q1) #size of z -> (#batch_size, sizeof(z))
 
     #calculate log q(z|x,y,m)
-    temp = log_gaussian_torch(z,mu_q1,torch.exp(logvar_q1))
+    temp = log_gaussian_torch(z_sampled,mu_q1,torch.exp(logvar_q1))
     log_q1 = torch.sum(temp, dim =1)
 
     #calculate log p(x|y,z,m)
     #log_pxyzm = torch.sum(torch.mul(x.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x.view(-1,784), torch.log(1-x.view(-1,784)+1e-4)), dim=1)
+    x_recon = model.decode(model.onehot(y),z_sampled,m_sampled)
     log_pxyzm = torch.sum(torch.mul(x.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x.view(-1,784), torch.log(1-x_recon.view(-1,784)+1e-4)), dim=1)
     #temp_print = F.binary_cross_entropy(x_recon.view(-1,784),x.view(-1,784),reduction = 'sum')
 
@@ -102,9 +101,9 @@ def pred_logRatio(x, x_recon, mu_q1, logvar_q1, m, device):
     py = 0.1
     
     #calculate log p(z)
-    zero_tensor = torch.zeros(z.size()).to(device)
-    one_tensor = torch.ones(z.size()).to(device)
-    temp = log_gaussian_torch(z,zero_tensor,one_tensor)
+    zero_tensor = torch.zeros(z_sampled.size()).to(device)
+    one_tensor = torch.ones(z_sampled.size()).to(device)
+    temp = log_gaussian_torch(z_sampled,zero_tensor,one_tensor)
     log_pz = torch.sum(temp, dim = 1)
 
     #adding a constant at the end to prevent underflow. The term will not affect the overall calculation due to the softmax.
@@ -134,8 +133,9 @@ def ELBO_xy(x, y, model):
 
     #calculate  E_q(z,m|x,y)[(log p(x|y,z,m))]. We do monte carlo estimation with just one sample since the batch is large enough.
     #we do monte carlo estimation with one m and K z samples
-    BCE = torch.sum(torch.mul(x.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x.view(-1,784), torch.log(1-x_recon.view(-1,784)+1e-4)), dim=1)
-
+    BCE = torch.zeros((x.size()[0],1))
+    for i in range(0,11):
+        BCE = BCE + torch.sum(torch.mul(x.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x.view(-1,784), torch.log(1-x_recon.view(-1,784)+1e-4)), dim=1)
     #calculate -1/N sum_N KL(q(z,m|x,y))
     logvar_cat = torch.cat((logvar_q1, logvar_q2), dim = 1)
     mu_cat = torch.cat((mu_q1, mu_q2), dim = 1)
