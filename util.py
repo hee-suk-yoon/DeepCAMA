@@ -133,6 +133,7 @@ def ELBO_xy(x, y, model):
     py = 0.1
 
     #calculate  E_q(z,m|x,y)[(log p(x|y,z,m))]. We do monte carlo estimation with just one sample since the batch is large enough.
+    #we do monte carlo estimation with one m and K z samples
     BCE = torch.sum(torch.mul(x.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x.view(-1,784), torch.log(1-x_recon.view(-1,784)+1e-4)), dim=1)
 
     #calculate -1/N sum_N KL(q(z,m|x,y))

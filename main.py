@@ -46,8 +46,8 @@ val_lodaer = torch.utils.data.DataLoader(val_data, batch_size=args.batch_size, s
 test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.batch_size, shuffle=True, **kwargs)
 
 
-train_loader_FT = torch.utils.data.DataLoader(train_data, batch_size=128, shuffle=True, **kwargs)
-test_loader_FT = torch.utils.data.DataLoader(test_data, batch_size=128, shuffle=True, **kwargs)
+train_loader_FT = torch.utils.data.DataLoader(train_data, batch_size=256, shuffle=True, **kwargs)
+test_loader_FT = torch.utils.data.DataLoader(test_data, batch_size=256, shuffle=True, **kwargs)
 # ------------------------------------------------------\
 
 
@@ -153,7 +153,7 @@ class DeepCAMA(nn.Module):
 
         #p(x|y,z,m)
         x_recon = self.decode(y,z,m)
-        return x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2
+        return x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2, z
 
 # Reconstruction + KL divergence losses summed over all elements and batch
 def loss_function(recon_x, x, y, mu_q1, logvar_q1, mu_q2, logvar_q2):
@@ -165,7 +165,11 @@ def loss_function(recon_x, x, y, mu_q1, logvar_q1, mu_q2, logvar_q2):
     # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
     KLD = -0.5 * torch.sum(1 + logvar_q1 - mu_q1.pow(2) - logvar_q1.exp())
 
+    #loss = ELBO_xy(x,y, model)
+    #loss = torch.sum(loss)
+
     return BCE  + KLD
+    #return -loss
 
 
 def train(epoch):
@@ -220,14 +224,15 @@ def loss_function_FT(x_train, y_train, x_test):
     train_batch_size = x_train.size()[0]
     test_batch_size = x_test.size()[0]
     #alpha = train_batch_size/(train_batch_size+test_batch_size)
-    alpha = 0.7
+    alpha = 0.9
     #print(y_train)
     ELBO_xym0_calc = ELBO_xym0(x_train,y_train,model)
     ELBO_xy_calc = ELBO_xy(x_train,y_train, model)
     ELBO_x_calc = ELBO_x(x_test,model,device)
 
     #loss = alpha*(1/train_batch_size)*torch.sum(ELBO_xy_calc) + (1-alpha)*(1/test_batch_size)*torch.sum(ELBO_x_calc)
-    loss = alpha*(1/train_batch_size)*torch.sum(ELBO_xym0_calc) + (1-alpha)*(1/test_batch_size)*torch.sum(ELBO_x_calc)
+    #loss = alpha*(1/train_batch_size)*torch.sum(ELBO_xym0_calc) + (1-alpha)*(1/test_batch_size)*torch.sum(ELBO_x_calc)
+    loss = alpha*torch.sum(ELBO_xym0_calc) + (1-alpha)*torch.sum(ELBO_x_calc)
     return -loss
 
 def finetune(epoch,ready):
@@ -260,6 +265,8 @@ def finetune(epoch,ready):
                 epoch, batch_id * len(data_train), len(train_loader_FT.dataset),
                 100. * batch_id / len(train_loader_FT),
                 loss.item() / len(data_train)))
+    print('====> Epoch: {} Average loss: {:.4f}'.format(
+        epoch, FT_loss / len(train_loader_FT.dataset)))
     return
 
 def test():
@@ -294,21 +301,21 @@ def test():
 
 model = DeepCAMA().to(device)
 optimizer = optim.Adam(model.parameters(), lr=(1e-4+1e-5)/2)
-optimizer_FT = optim.Adam(model.parameters(), lr = 1e-3)
+optimizer_FT = optim.Adam(model.parameters(), lr = 1e-5)
 if __name__ == "__main__":
     #for name, param in model.named_parameters():
     #    if param.requires_grad:
     #        print(name)
 
-    torch.autograd.set_detect_anomaly(True)
+    #torch.autograd.set_detect_anomaly(True)
     if args.train:
         for epoch in range(1, args.epochs + 1):
             train(epoch)
         if args.train_save:
-            torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight.pt') 
+            torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight55.pt') 
     
     else:
-        model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight3_2.pt', map_location=device))
+        model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight55.pt', map_location=device))
         model.eval()
         accuracy = test()
     
