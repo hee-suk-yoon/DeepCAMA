@@ -16,6 +16,7 @@ from util import *
 #  ----------------------------------------------------
 parser = argparse.ArgumentParser(description='DeepCAMA MNIST Example')
 parser.add_argument('--train', type=str2bool, required=True, metavar='T/F')
+parser.add_argument('--ca', type=str2bool, required=True, metavar='T/F')
 parser.add_argument('--train-save', type=str2bool, default=False, metavar='T/F')
 parser.add_argument('--finetune', type=str2bool, default=False, metavar='T/F')
 parser.add_argument('--batch-size', type=int, default=128, metavar='N',
@@ -37,15 +38,42 @@ device = torch.device("cuda" if args.cuda else "cpu")
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
-train_set = datasets.MNIST('./data/train/', train=True, download=True, transform=transforms.ToTensor())
-train_data, val_data = torch.utils.data.random_split(train_set, [int(0.95*len(train_set)),int(0.05*len(train_set))], generator=torch.Generator().manual_seed(42))
+train_data = datasets.MNIST('./data/train/', train=True, download=True, transform=transforms.ToTensor())
 test_data = datasets.MNIST('./data/train/', train=False, transform=transforms.ToTensor())
 
 
-train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, **kwargs)
-val_lodaer = torch.utils.data.DataLoader(val_data, batch_size=args.batch_size, shuffle=True, **kwargs)
+
+#train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, **kwargs)
 test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.batch_size, shuffle=True, **kwargs)
 
+
+#---------------------------prepare clean + aug data loader--------------------------------
+train_data_clean = list(train_data)
+for idx, _ in enumerate(train_data_clean):
+    L1 = list(train_data_clean[idx])
+    L1.append(0)
+    train_data_clean[idx] = tuple(L1)
+    
+vertical_shift_range = np.arange(start=0.0,stop=1.0,step=0.1)
+
+listofones = [1] * 10
+split_list = [int(element * 0.1*len(train_data)) for element in listofones]
+train_data_aug_split = torch.utils.data.random_split(train_data, split_list, generator=torch.Generator().manual_seed(42))
+train_data_aug = []
+for idx, _ in enumerate(train_data_aug_split):
+    split_part = list(train_data_aug_split[idx])
+    for idx2, _ in enumerate(split_part):
+        #print(split_part[idx2][0].size())
+        shift_fn = transforms.RandomAffine(degrees=0,translate=(0.0,vertical_shift_range[idx]))
+        L1 = list(split_part[idx2])
+        L1[0] = shift_fn(L1[0])
+        L1.append(1)
+        split_part[idx2] = tuple(L1)
+    train_data_aug = train_data_aug + split_part
+train_data_clean_aug = train_data_clean + train_data_aug
+train_loader_clean_aug = torch.utils.data.DataLoader(train_data_clean_aug, batch_size=args.batch_size, shuffle=True, **kwargs)
+train_loader_clean = torch.utils.data.DataLoader(train_data_clean, batch_size=args.batch_size, shuffle=True, **kwargs)
+#--------------------------------------------------------------------
 
 train_loader_FT = torch.utils.data.DataLoader(train_data, batch_size=256, shuffle=True, **kwargs)
 test_loader_FT = torch.utils.data.DataLoader(test_data, batch_size=256, shuffle=True, **kwargs)
@@ -162,7 +190,7 @@ class DeepCAMA(nn.Module):
         return x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2
     
 # Reconstruction + KL divergence losses summed over all elements and batch
-def loss_function(recon_x, x, y, mu_q1, logvar_q1, mu_q2, logvar_q2):
+def loss_function(x, y, clean):
     #BCE = F.binary_cross_entropy(recon_x.view(-1,784), x.view(-1, 784), reduction='sum')
 
     # see Appendix B from VAE paper:
@@ -172,7 +200,15 @@ def loss_function(recon_x, x, y, mu_q1, logvar_q1, mu_q2, logvar_q2):
     #KLD = -0.5 * torch.sum(1 + logvar_q1 - mu_q1.pow(2) - logvar_q1.exp())
     batch_size = x.size()[0]
     loss = (1/batch_size)*torch.sum(ELBO_xym0(x,y, model))
-
+    
+    alpha = 0.5
+    with torch.no_grad():
+        ELBO_xym0_calc = ELBO_xym0(x,y,model) #size [128
+        ELBO_xy_calc = ELBO_xy(x,y,model,device) #size [128, 128] ###error
+    #print(1-clean)
+    #print(clean.size())
+    loss = (1-clean)*ELBO_xym0_calc + clean*ELBO_xy_calc
+    loss.requires_grad = True
     return -loss
     #return -loss
 
@@ -180,23 +216,23 @@ def loss_function(recon_x, x, y, mu_q1, logvar_q1, mu_q2, logvar_q2):
 def train(epoch):
     model.eval()
     train_loss = 0
-    for batch_id,  (data,y) in enumerate(train_loader):
+    for batch_id,  (data,y, clean) in enumerate(train_loader_clean):
         data = data.to(device)
         y = y.to(device)
+        clean = clean.to(device)
         optimizer.zero_grad()
-        x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(data,y,manipulated=False)
-        loss = loss_function(x_recon, data, y, mu_q1, logvar_q1, mu_q2, logvar_q2)
+        loss = loss_function(data,y,clean)
         loss.backward()
         train_loss += loss.item()
         optimizer.step()
         if batch_id % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_id * len(data), len(train_loader.dataset),
-                100. * batch_id / len(train_loader),
+                epoch, batch_id * len(data), len(train_loader_clean.dataset),
+                100. * batch_id / len(train_loader_clean),
                 loss.item() / len(data)))
 
     print('====> Epoch: {} Average loss: {:.4f}'.format(
-          epoch, train_loss / len(train_loader.dataset)))
+          epoch, train_loss / len(train_loader_clean.dataset)))
     return
 
 qmx = [

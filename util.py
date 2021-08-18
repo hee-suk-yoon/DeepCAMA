@@ -133,7 +133,7 @@ def ELBO_xy(x, y, model,device):
     mu_q2, logvar_q2 = model.encode2(x)
     m_sampled = model.reparameterize(mu_q2, logvar_q2)
 
-    BCE = torch.zeros((x.size()[0],1)).to(device)
+    BCE = torch.zeros(x.size()[0]).to(device)
     K = 20
     mu_q1, logvar_q1 = model.encode1(x,model.onehot(y),m_sampled)
     for j in range(0,K):
@@ -141,13 +141,12 @@ def ELBO_xy(x, y, model,device):
         x_recon = model.decode(model.onehot(y),z_sampled,m_sampled)
         log_pxyzm = torch.sum(torch.mul(x.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x.view(-1,784), torch.log(1-x_recon.view(-1,784)+1e-4)), dim=1)
         BCE = BCE+ log_pxyzm
-
     BCE = (1/K) * BCE
     #KL(q(z,m|x,y))
     logvar_cat = torch.cat((logvar_q1, logvar_q2), dim = 1)
     mu_cat = torch.cat((mu_q1, mu_q2), dim = 1)
     KLD =  0.5 * torch.sum(1 + logvar_cat - mu_cat.pow(2) - logvar_cat.exp(), dim=1)
-
+    #print(KLD.size())
     #p(y)
     py = 0.1
 
