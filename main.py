@@ -207,7 +207,7 @@ def loss_function(x, y, clean):
         ELBO_xy_calc = ELBO_xy(x,y,model,device) #size [128, 128] ###error
     #print(1-clean)
     #print(clean.size())
-    loss = (1-clean)*ELBO_xym0_calc + clean*ELBO_xy_calc
+    loss = torch.sum((1-clean)*ELBO_xym0_calc + clean*ELBO_xy_calc)
     loss.requires_grad = True
     return -loss
     #return -loss
