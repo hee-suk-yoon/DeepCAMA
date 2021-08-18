@@ -20,7 +20,7 @@ parser.add_argument('--train-save', type=str2bool, default=False, metavar='T/F')
 parser.add_argument('--finetune', type=str2bool, default=False, metavar='T/F')
 parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 128)')
-parser.add_argument('--epochs', type=int, default=100, metavar='N',
+parser.add_argument('--epochs', type=int, default=400, metavar='N',
                     help='number of epochs to train (default: 10)')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='disables CUDA training')
@@ -40,6 +40,7 @@ kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 train_set = datasets.MNIST('./data/train/', train=True, download=True, transform=transforms.ToTensor())
 train_data, val_data = torch.utils.data.random_split(train_set, [int(0.95*len(train_set)),int(0.05*len(train_set))], generator=torch.Generator().manual_seed(42))
 test_data = datasets.MNIST('./data/train/', train=False, transform=transforms.ToTensor())
+
 
 train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, **kwargs)
 val_lodaer = torch.utils.data.DataLoader(val_data, batch_size=args.batch_size, shuffle=True, **kwargs)
@@ -158,22 +159,21 @@ class DeepCAMA(nn.Module):
 
         #p(x|y,z,m)
         x_recon = self.decode(y_onehot,z,m)
-        return x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2, z
+        return x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2
     
 # Reconstruction + KL divergence losses summed over all elements and batch
 def loss_function(recon_x, x, y, mu_q1, logvar_q1, mu_q2, logvar_q2):
-    BCE = F.binary_cross_entropy(recon_x.view(-1,784), x.view(-1, 784), reduction='sum')
+    #BCE = F.binary_cross_entropy(recon_x.view(-1,784), x.view(-1, 784), reduction='sum')
 
     # see Appendix B from VAE paper:
     # Kingma and Welling. Auto-Encoding Variational Bayes. ICLR, 2014
     # https://arxiv.org/abs/1312.6114
     # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
-    KLD = -0.5 * torch.sum(1 + logvar_q1 - mu_q1.pow(2) - logvar_q1.exp())
+    #KLD = -0.5 * torch.sum(1 + logvar_q1 - mu_q1.pow(2) - logvar_q1.exp())
+    batch_size = x.size()[0]
+    loss = (1/batch_size)*torch.sum(ELBO_xym0(x,y, model))
 
-    #loss = ELBO_xy(x,y, model)
-    #loss = torch.sum(loss)
-
-    return BCE  + KLD
+    return -loss
     #return -loss
 
 
@@ -231,13 +231,13 @@ def loss_function_FT(x_train, y_train, x_test):
     #alpha = train_batch_size/(train_batch_size+test_batch_size)
     alpha = 0.5
     #print(y_train)
-    ELBO_xym0_calc = ELBO_xym0(x_train,y_train,model)
-    ELBO_xy_calc = ELBO_xy(x_train,y_train, model)
-    ELBO_x_calc = ELBO_x(x_test,model,device)
+    #ELBO_xym0_calc = ELBO_xym0(x_train,y_train,model)
+    with torch.no_grad():
+        ELBO_xy_calc = ELBO_xy(x_train,y_train, model,device)
+        ELBO_x_calc = ELBO_x(x_test,model,device)
 
-    #loss = alpha*(1/train_batch_size)*torch.sum(ELBO_xy_calc) + (1-alpha)*(1/test_batch_size)*torch.sum(ELBO_x_calc)
-    #loss = alpha*(1/train_batch_size)*torch.sum(ELBO_xym0_calc) + (1-alpha)*(1/test_batch_size)*torch.sum(ELBO_x_calc)
-    loss = alpha*torch.sum(ELBO_xym0_calc) + (1-alpha)*torch.sum(ELBO_x_calc)
+    loss = (alpha*torch.sum(ELBO_xy_calc) + (1-alpha)*torch.sum(ELBO_x_calc))
+    loss.requires_grad = True
     return -loss
 
 def finetune(epoch,ready):
@@ -255,6 +255,7 @@ def finetune(epoch,ready):
             y_dummy = y_dummy.to(device)
             break
         ready = True
+
     model.train()
     FT_loss = 0 
     for batch_id,  (data_train,y_train) in enumerate(train_loader_FT):
@@ -262,6 +263,8 @@ def finetune(epoch,ready):
         y_train = y_train.to(device)
         optimizer_FT.zero_grad()
         loss = loss_function_FT(data_train,y_train,data_FT)
+        #torch.enable_grad()
+        #torch.set_grad_enabled(True)
         loss.backward()
         FT_loss += loss.item()
         optimizer_FT.step()
@@ -278,8 +281,10 @@ def test():
     vertical_shift_range = np.arange(start=0.0,stop=1.0,step=0.1)
     if args.finetune:
         ready = False
-        for epoch in range(1,11):
+        for epoch in range(1,101):
             finetune(epoch,ready)
+    torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight817.pt') 
+
 
     model.eval()
     accuracy_list = [0]*vertical_shift_range.shape[0]
@@ -289,7 +294,6 @@ def test():
             temp = 0
             total_i = 0
             for i, (data, y) in enumerate(test_loader):
-                #print(i)
                 #if (data.size()[0] == args.batch_size): #resolve last batch issue later.
                     #data, y = shift_image(x=data,y=y,width_shift_val=0.0,height_shift_val=vsr)
                 data = data.to(device)
@@ -319,10 +323,10 @@ if __name__ == "__main__":
         for epoch in range(1, args.epochs + 1):
             train(epoch)
         if args.train_save:
-            torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight55.pt') 
+            torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight3_3.pt') 
     
     else:
-        model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight3_2.pt', map_location=device))
+        model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight3_3.pt', map_location=device))
         model.eval()
         accuracy = test()
     

@@ -60,7 +60,7 @@ def pred(x,model,device):
         #m = torch.zeros(x.size()[0], 32)
         #calculate the log-ration term for each y = c(as an approximation to log p(x,y=c))
         sum = 0
-        K = 30
+        K = 100
         for j in range(0,K):
             mu_q1, logvar_q1 = model.encode1(x,model.onehot(y),m)
             z = model.reparameterize(mu_q1, logvar_q1)
@@ -114,34 +114,45 @@ def pred_logRatio(x, y, z_sampled, m_sampled, mu_q1, logvar_q1, model, device):
 
 def ELBO_x(x,model,device):
     #Calculates ELBO(x)
+    #with torch.no_grad():
     sum = torch.zeros(x.size()[0]).to(device)
     for i in range(0,10):
         yc = i*torch.ones(x.size()[0]).type(torch.int64).to(device)
 
         #ELBO(x,yc)
-        sum = sum + torch.exp(ELBO_xy(x,yc,model))
+        sum = sum + torch.exp(ELBO_xy(x,yc,model,device))
 
     return torch.log(sum+1e-4) #adding 1e-4 to prevent -inf (when sum goes to 0)
 
-def ELBO_xy(x, y, model):
+def ELBO_xy(x, y, model,device):
     #Calculates ELBO(x,y)
     #x and y should already be in device. 
-    x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(x,y,manipulated=True)
+    #x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(x,y,manipulated=True)
+    #with torch.no_grad():
+            #calculate  E_q(z,m|x,y)[(log p(x|y,z,m))]
+    mu_q2, logvar_q2 = model.encode2(x)
+    m_sampled = model.reparameterize(mu_q2, logvar_q2)
 
-    #p(y)
-    py = 0.1
+    BCE = torch.zeros((x.size()[0],1)).to(device)
+    K = 20
+    mu_q1, logvar_q1 = model.encode1(x,model.onehot(y),m_sampled)
+    for j in range(0,K):
+        z_sampled = model.reparameterize(mu_q1, logvar_q1)
+        x_recon = model.decode(model.onehot(y),z_sampled,m_sampled)
+        log_pxyzm = torch.sum(torch.mul(x.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x.view(-1,784), torch.log(1-x_recon.view(-1,784)+1e-4)), dim=1)
+        BCE = BCE+ log_pxyzm
 
-    #calculate  E_q(z,m|x,y)[(log p(x|y,z,m))]. We do monte carlo estimation with just one sample since the batch is large enough.
-    #we do monte carlo estimation with one m and K z samples
-    BCE = torch.zeros((x.size()[0],1))
-    for i in range(0,11):
-        BCE = BCE + torch.sum(torch.mul(x.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x.view(-1,784), torch.log(1-x_recon.view(-1,784)+1e-4)), dim=1)
-    #calculate -1/N sum_N KL(q(z,m|x,y))
+    BCE = (1/K) * BCE
+    #KL(q(z,m|x,y))
     logvar_cat = torch.cat((logvar_q1, logvar_q2), dim = 1)
     mu_cat = torch.cat((mu_q1, mu_q2), dim = 1)
     KLD =  0.5 * torch.sum(1 + logvar_cat - mu_cat.pow(2) - logvar_cat.exp(), dim=1)
 
+    #p(y)
+    py = 0.1
+
     return math.log(py) + BCE + KLD
+
 
 def ELBO_xym0(x, y, model):
     #Calculates ELBO(x,y,do(m=0))

@@ -10,64 +10,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats
 import math
-from MNIST_shift import shift_image_v2
+from util import *
 
-
-#    -----------------Helper Functions-----------------
-def log_gaussian(x,mean,var):
-    std = math.sqrt(var)
-    return -math.log(std*math.sqrt(2*math.pi)+1e-4) - 0.5*((x-mean)/(std+1e-4))**2
-
-def log_gausian_torch(x,mean,var):
-    std = torch.sqrt(var)
-    return -torch.log(std*math.sqrt(2*math.pi)+1e-4) - 0.5*((x-mean)/(std+1e-4))**2
-
-def accuracy(y_true, y_pred):
-    #y_true and y_pred is assumed to be numpy array.
-    y_true = y_true.reshape(-1).astype(int)
-    y_pred = y_pred.reshape(-1).astype(int)
-
-    correct = 0
-    for i in range(0,y_true.shape[0]):
-        if y_true[i] == y_pred[i]:
-            correct = correct + 1
-
-    return correct/y_true.shape[0]
-
-def shift_image(x,y,width_shift_val,height_shift_val):
-    #x is assumed to be a tensor of shape (#batch_size, #channels, width, height) = (#batch size, 1, 28, 28)
-    #y is assumed to be a tensor of shape (#batch_size)
-    batch_size = x.size()[0]
-    x = x.detach().cpu().numpy().reshape(batch_size,28,28)
-    y = y.detach().cpu().numpy().reshape(batch_size)
-
-    # import relevant library
-    from tensorflow.keras.preprocessing.image import ImageDataGenerator
-    # create the class object
-    datagen = ImageDataGenerator(width_shift_range=width_shift_val, height_shift_range=height_shift_val)
-    # fit the generator
-    datagen.fit(x.reshape(batch_size, 28, 28, 1))
-
-    a = datagen.flow(x.reshape(batch_size, 28, 28, 1),y.reshape(batch_size, 1),batch_size=batch_size,shuffle=False)
-
-    X, Y = next(iter(a))   
-    X = torch.from_numpy(X).view(batch_size,1,28,28)
-    Y = torch.from_numpy(Y).view(batch_size)
-
-    return X,Y
-
-def str2bool(v):
-    if isinstance(v, bool):
-        return v
-    if v.lower() in ('yes', 'true', 't', 'y', '1'):
-        return True
-    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
-        return False
-    else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
-#  ----------------------------------------------------
-
-#  ----------------------------------------------------
 
     
 parser = argparse.ArgumentParser(description='DeepCAMA MNIST Example')
@@ -91,12 +35,62 @@ device = torch.device("cuda" if args.cuda else "cpu")
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
-train_set = datasets.MNIST('./data/train/', train=True, download=True, transform=transforms.ToTensor())
-train_data, val_data = torch.utils.data.random_split(train_set, [int(0.95*len(train_set)),int(0.05*len(train_set))], generator=torch.Generator().manual_seed(42))
-test_data = datasets.MNIST('./data/train/', train=False, transform=transforms.ToTensor())
+train_data = datasets.MNIST('./data/train/', train=True, download=True, transform=transforms.ToTensor())
+train_data_clean = list(train_data)
+for idx, _ in enumerate(train_data_clean):
+    L1 = list(train_data_clean[idx])
+    L1.append(0)
+    train_data_clean[idx] = tuple(L1)
+    
+#train_loader = torch.utils.data.DataLoader(train_data_clean, batch_size=args.batch_size, shuffle=True, **kwargs)
 
-train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, **kwargs)
-val_lodaer = torch.utils.data.DataLoader(val_data, batch_size=args.batch_size, shuffle=True, **kwargs)
+vertical_shift_range = np.arange(start=0.0,stop=1.0,step=0.1)
+
+listofones = [1] * 10
+split_list = [int(element * 0.1*len(train_data)) for element in listofones]
+train_data_aug_split = torch.utils.data.random_split(train_data, split_list, generator=torch.Generator().manual_seed(42))
+train_data_aug = []
+for idx, _ in enumerate(train_data_aug_split):
+    split_part = list(train_data_aug_split[idx])
+    for idx2, _ in enumerate(split_part):
+        #print(split_part[idx2][0].size())
+        shift_fn = transforms.RandomAffine(degrees=0,translate=(0.0,vertical_shift_range[idx]))
+        L1 = list(split_part[idx2])
+        L1[0] = shift_fn(L1[0])
+        L1.append(1)
+        split_part[idx2] = tuple(L1)
+        #train_data_aug_split[idx][idx2] = tuple(L1)
+        #print(L1)
+    train_data_aug = train_data_aug + split_part
+    
+#for idx, split_part in enumerate(train_data_aug_split):
+#    #print(list(split_part)[0][0].size())
+#    train_data_aug = train_data_aug + list(split_part)       
+
+#for idx, _ in enumerate(train_data_aug_split):
+#    #print(list(split_part)[0][0].size())
+#    split_part = list(train_data_aug_split[idx])
+#    train_data_aug = train_data_aug + split_part    
+
+train_data_clean_aug = train_data_clean + train_data_aug
+train_loader = torch.utils.data.DataLoader(train_data_clean_aug, batch_size=args.batch_size, shuffle=True, **kwargs)
+print(len(train_data_aug))
+print(len(train_data_clean_aug))
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+test_data = datasets.MNIST('./data/train/', train=False, transform=transforms.ToTensor())
 test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.batch_size, shuffle=True, **kwargs)
 # ------------------------------------------------------\
 
@@ -126,7 +120,7 @@ class DeepCAMABaseline(nn.Module):
 
 def train(epoch):
     train_loss = 0
-    for batch_id,  (data,y) in enumerate(train_loader):
+    for batch_id,  (data,y,clean) in enumerate(train_loader):
         data = data.to(device)
         y = y.to(device)
         model.train()
@@ -164,10 +158,10 @@ if __name__ == "__main__":
     if args.train:
         for epoch in range(1, args.epochs + 1):
             train(epoch)
-        torch.save(model.state_dict(), 'baseline.pt') 
+        torch.save(model.state_dict(), 'baseline_aug.pt') 
     else:
         index = 0
-        model.load_state_dict(torch.load('baseline.pt', map_location=device))
+        model.load_state_dict(torch.load('baseline_aug.pt', map_location=device))
         model.eval()
         for vsr in vertical_shift_range:
             temp = 0
@@ -177,7 +171,7 @@ if __name__ == "__main__":
 
             for i, (data, y) in enumerate(test_loader):
                 #if (data.size()[0] == args.batch_size): #resolve last batch issue later.
-                data, y = shift_image_v2(x=data,y=y,width_shift_val=0.0,height_shift_val=vsr)
+                data, y = shift_image(x=data,y=y,width_shift_val=0.0,height_shift_val=vsr)
                 y_pred = pred(data)
                 #print(y,y_pred)
                 #print(y_pred)
@@ -191,12 +185,11 @@ if __name__ == "__main__":
             index = index + 1 
             print(temp/total_i)
         #print(accuracy)
-        np.save('BaselineTestVer_(2).npy', accuracy_list)
+        np.save('BaselineTestVer_aug.npy', accuracy_list)
         plt.plot(vertical_shift_range,accuracy_list)
         plt.show()
         
-    
-    
-    
+
+
     
     
