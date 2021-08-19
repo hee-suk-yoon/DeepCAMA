@@ -117,10 +117,10 @@ def ELBO_x(x,model,device):
     #with torch.no_grad():
     sum = torch.zeros(x.size()[0]).to(device)
     for i in range(0,10):
-        yc = i*torch.ones(x.size()[0]).type(torch.int64).to(device)
+        #yc = i*torch.ones(x.size()[0]).type(torch.int64).to(device)
 
         #ELBO(x,yc)
-        sum = sum + torch.exp(ELBO_xy(x,yc,model,device))
+        sum = sum + torch.exp(ELBO_xy(x,i*torch.ones(x.size()[0]).type(torch.int64).to(device),model,device))
 
     return torch.log(sum+1e-4) #adding 1e-4 to prevent -inf (when sum goes to 0)
 
