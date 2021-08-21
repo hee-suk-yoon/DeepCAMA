@@ -15,13 +15,14 @@ from torch.autograd import Variable
 
 #  ----------------------------------------------------
 parser = argparse.ArgumentParser(description='DeepCAMA MNIST Example')
+parser.add_argument('--run', type=str2bool, required=True, metavar='T/F')
 parser.add_argument('--train', type=str2bool, required=True, metavar='T/F')
 parser.add_argument('--ca', type=str2bool, required=True, metavar='T/F')
-parser.add_argument('--train-save', type=str2bool, default=False, metavar='T/F')
+parser.add_argument('--train-save', type=str2bool, required=True, metavar='T/F')
 parser.add_argument('--finetune', type=str2bool, default=False, metavar='T/F')
-parser.add_argument('--batch-size', type=int, default=256, metavar='N',
+parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 128)')
-parser.add_argument('--epochs', type=int, default=70, metavar='N',
+parser.add_argument('--epochs', type=int, default=1000, metavar='N',
                     help='number of epochs to train (default: 10)')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='disables CUDA training')
@@ -39,14 +40,14 @@ device = torch.device("cuda" if args.cuda else "cpu")
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
 train_data = datasets.MNIST('./data/train/', train=True, download=True, transform=transforms.ToTensor())
+train_data, val_data = torch.utils.data.random_split(train_data, [int(0.95*len(train_data)),int(0.05*len(train_data))], generator=torch.Generator().manual_seed(42))
 test_data = datasets.MNIST('./data/train/', train=False, transform=transforms.ToTensor())
 
 
 
 #train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, **kwargs)
 test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.batch_size, shuffle=True, **kwargs)
-
-
+val_loader = torch.utils.data.DataLoader(val_data, batch_size=args.batch_size, shuffle=True, **kwargs)
 #---------------------------prepare clean + aug data loader--------------------------------
 train_data_clean = list(train_data)
 for idx, _ in enumerate(train_data_clean):
@@ -75,7 +76,40 @@ train_loader_clean_aug = torch.utils.data.DataLoader(train_data_clean_aug, batch
 train_loader_clean = torch.utils.data.DataLoader(train_data_clean, batch_size=args.batch_size, shuffle=True, **kwargs)
 #--------------------------------------------------------------------
 
-train_loader_FT = torch.utils.data.DataLoader(train_data, batch_size=256, shuffle=True, **kwargs)
+#---------------------------prepare data for finetune--------------------------------
+test_data_finetune = list(test_data)
+#for idx, _ in enumerate(test_data_finetune):
+#    L1 = list(test_data_finetune[idx])
+#    L1.append(1)
+#    test_data_finetune[idx] = tuple(L1)
+    
+    
+listofones_1 = [1] * 2
+split_list_1 = [int(element * 0.5*len(test_data_finetune)) for element in listofones_1]
+test_data_split = torch.utils.data.random_split(test_data_finetune, split_list_1, generator=torch.Generator().manual_seed(42))
+test_data_half = test_data_split[0]
+vertical_shift_range = np.arange(start=0.0,stop=1.0,step=0.1)
+listofones = [1] * 10
+split_list = [int(element * 0.1*len(test_data_half)) for element in listofones]
+test_data_aug_split = torch.utils.data.random_split(test_data_half, split_list, generator=torch.Generator().manual_seed(42))
+test_data_aug = []
+for idx, _ in enumerate(test_data_aug_split):
+    split_part = list(test_data_aug_split[idx])
+    for idx2, _ in enumerate(split_part):
+        #print(split_part[idx2][0].size())
+        shift_fn = transforms.RandomAffine(degrees=0,translate=(0.0,vertical_shift_range[idx]))
+        L1 = list(split_part[idx2])
+        L1[0] = shift_fn(L1[0])
+        L1.append(1)
+        split_part[idx2] = tuple(L1)
+    test_data_aug = test_data_aug + split_part
+finetune_data_loader = torch.utils.data.DataLoader(test_data_aug, batch_size=args.batch_size, shuffle=True, **kwargs)
+#--------------------------------------------------------------------
+
+
+
+
+#train_loader_FT = torch.utils.data.DataLoader(train_data, batch_size=256, shuffle=True, **kwargs)
 test_loader_FT = torch.utils.data.DataLoader(test_data, batch_size=256, shuffle=True, **kwargs)
 # ------------------------------------------------------\
 
@@ -218,10 +252,12 @@ def loss_function(x, y, clean):
         #temp_ELBO_xym0_calc = Variable(ELBO_xym0_calc.data, requires_grad=True)
         #loss = torch.sum(temp_ELBO_xym0_calc).to(device)
         #loss = torch.sum((1/num_clean_data)*ELBO_xym0_calc) 
-        loss = torch.sum((1/num_clean_data)*ELBO_xym0(x,y,model)) 
+        #loss = torch.sum((1/num_clean_data)*ELBO_xym0(x,y,model)) 
+        loss = torch.sum(ELBO_xym0(x,y,model)) 
     elif num_clean_data == 0:
         #loss = torch.sum((1/num_aug_data)*ELBO_xy_calc)
-        loss = torch.sum((1/num_aug_data)* ELBO_xy(x,y,model,device))
+        #loss = torch.sum((1/num_aug_data)* ELBO_xy(x,y,model,device))
+        loss = torch.sum(ELBO_xy(x,y,model,device))
     else:
         loss = torch.sum((1-clean)*(1/num_clean_data)*ELBO_xym0(x,y,model) + clean*(1/num_aug_data)*ELBO_xy(x,y,model,device))
 
@@ -303,16 +339,11 @@ def finetune(epoch,ready):
             else:
                 param.requires_grad = False
         
-        for i, (data_FT, y_dummy) in enumerate(test_loader_FT):
-            data_FT, y_dummy = shift_image(x=data_FT,y=y_dummy,width_shift_val=0.0,height_shift_val=0.3)
-            data_FT = data_FT.to(device)
-            y_dummy = y_dummy.to(device)
-            break
         ready = True
 
     model.train()
     FT_loss = 0 
-    for batch_id,  (data_train,y_train) in enumerate(train_loader_FT):
+    for batch_id,  (data_train,y_train, train_set) in enumerate(train_loader_clean):
         data_train = data_train.to(device)
         y_train = y_train.to(device)
         optimizer_FT.zero_grad()
@@ -324,11 +355,11 @@ def finetune(epoch,ready):
         optimizer_FT.step()
         if batch_id  % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_id * len(data_train), len(train_loader_FT.dataset),
-                100. * batch_id / len(train_loader_FT),
+                epoch, batch_id * len(data_train), len(train_loader_clean.dataset),
+                100. * batch_id / len(train_loader_clean),
                 loss.item() / len(data_train)))
     print('====> Epoch: {} Average loss: {:.4f}'.format(
-        epoch, FT_loss / len(train_loader_FT.dataset)))
+        epoch, FT_loss / len(train_loader_clean.dataset)))
     return
 
 def test():
@@ -366,6 +397,7 @@ def test():
     return accuracy_list
 
 model = DeepCAMA().to(device)
+
 optimizer = optim.Adam(model.parameters(), lr=(1e-4+1e-5)/2)
 optimizer_FT = optim.Adam(model.parameters(), lr = 1e-5)
 if __name__ == "__main__":
@@ -374,19 +406,56 @@ if __name__ == "__main__":
     #        print(name)
 
     #torch.autograd.set_detect_anomaly(True)
-    if args.train:
-        for epoch in range(1, args.epochs + 1):
-            train(epoch)
-        if args.train_save:
-            torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight818.pt') 
+    if args.run: 
+        """
+        model.load_state_dict(torch.load('/media/hsy/DeepCAMA/TrainHor6.pt', map_location=device))
+        z_sample = model.reparameterize(torch.zeros(1).view(1,1),torch.zeros(1).view(1,1)).to(device)
+        m_sample = model.reparameterize(torch.zeros(1).view(1,1),torch.zeros(1).view(1,1)).to(device)
+        y = 3* torch.ones(1).to(torch.int64).to(device)
+        x_created = model.decode(model.onehot(y),z_sample,m_sample)
+        save_image(x_created.view(1,1,28,28),'created1.png')
+        
+        
+        
+        z_sample = model.reparameterize(torch.zeros(1).view(1,1),torch.zeros(1).view(1,1)).to(device)
+        m_sample = model.reparameterize(torch.zeros(1).view(1,1),torch.zeros(1).view(1,1)).to(device)
+        y = 3* torch.ones(1).to(torch.int64).to(device)
+        x_created = model.decode(model.onehot(y),z_sample,m_sample)
+        save_image(x_created.view(1,1,28,28),'created2.png')
     
-    else:
-        model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight818.pt', map_location=device))
-        model.eval()
-        accuracy = test()
-        print(accuracy)
-        np.save('TrainVerTestWoFine.npy', accuracy)
+        z_sample = model.reparameterize(torch.zeros(1).view(1,1),torch.zeros(1).view(1,1)).to(device)
+        m_sample = model.reparameterize(torch.zeros(1).view(1,1),torch.zeros(1).view(1,1)).to(device)
+        y = 3* torch.ones(1).to(torch.int64).to(device)
+        x_created = model.decode(model.onehot(y),z_sample,m_sample)
+        save_image(x_created.view(1,1,28,28),'created3.png')
+    
+        z_sample = model.reparameterize(torch.zeros(1).view(1,1),torch.zeros(1).view(1,1)).to(device)
+        m_sample = model.reparameterize(torch.zeros(1).view(1,1),torch.zeros(1).view(1,1)).to(device)
+        y = 3* torch.ones(1).to(torch.int64).to(device)
+        x_created = model.decode(model.onehot(y),z_sample,m_sample)
+        save_image(x_created.view(1,1,28,28),'created4.png')
 
+        z_sample = model.reparameterize(torch.zeros(1).view(1,1),torch.zeros(1).view(1,1)).to(device)
+        m_sample = model.reparameterize(torch.zeros(1).view(1,1),torch.zeros(1).view(1,1)).to(device)
+        y = 3* torch.ones(1).to(torch.int64).to(device)
+        x_created = model.decode(model.onehot(y),z_sample,m_sample)
+        save_image(x_created.view(1,1,28,28),'created5.png')
+        """
+        
+        if args.train:
+            #model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight821.pt', map_location=device))
+            for epoch in range(1, args.epochs + 1):
+                train(epoch)
+            if args.train_save:
+                torch.save(model.state_dict(), '/media/hsy/DeepCAMA/TrainCleanEpoches1000.pt') 
+        
+        else:
+            model.load_state_dict(torch.load('/media/hsy/DeepCAMA/TrainCleanEpoches1000.pt', map_location=device))
+            model.eval()
+            accuracy = test()
+            print(accuracy)
+            #np.save('TrainVerTestWoFine.npy', accuracy)
+        
     #np.save('OurWoFineClean_weight3_2.npy', accuracy_list)
     #plt.plot(vertical_shift_range,accuracy_list)
     #plt.show()
