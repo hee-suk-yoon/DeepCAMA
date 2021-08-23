@@ -115,13 +115,31 @@ def pred_logRatio(x, y, z_sampled, m_sampled, mu_q1, logvar_q1, model, device):
 def ELBO_x(x,model,device):
     #Calculates ELBO(x)
     #with torch.no_grad():
+    underflow_const = 400
     sum = torch.zeros(x.size()[0]).to(device)
+    """
+    ELBO_x_rem = []
+
     for i in range(0,10):
-        #yc = i*torch.ones(x.size()[0]).type(torch.int64).to(device)
+        a=ELBO_xy(x,i*torch.ones(x.size()[0]).type(torch.int64).to(device),model,device).cpu()
+        ELBO_x_rem.append(a)
+
+    sum_temp = torch.zeros(x.size()[0]).cpu()   
+    for i in range(0,10):
+        #sum_temp = sum_temp + ELBO_x_rem[i] 
+        max_min = 
+    
+    sum_temp = sum_temp/10
+    """
+    for i in range(0,10):
+        yc = i*torch.ones(x.size()[0]).type(torch.int64).to(device)
 
         #ELBO(x,yc)
+        a=ELBO_xy(x,i*torch.ones(x.size()[0]).type(torch.int64).to(device),model,device)
+        #print(a)
+        print(torch.exp(a+underflow_const))
         sum = sum + torch.exp(ELBO_xy(x,i*torch.ones(x.size()[0]).type(torch.int64).to(device),model,device))
-
+    #print(torch.log(sum+1e-4))
     return torch.log(sum+1e-4) #adding 1e-4 to prevent -inf (when sum goes to 0)
 
 def ELBO_xy(x, y, model,device):

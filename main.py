@@ -15,14 +15,17 @@ from torch.autograd import Variable
 
 #  ----------------------------------------------------
 parser = argparse.ArgumentParser(description='DeepCAMA MNIST Example')
+
+
 parser.add_argument('--run', type=str2bool, required=True, metavar='T/F')
 parser.add_argument('--train', type=str2bool, required=True, metavar='T/F')
 parser.add_argument('--ca', type=str2bool, required=True, metavar='T/F')
 parser.add_argument('--train-save', type=str2bool, required=True, metavar='T/F')
+parser.add_argument('--loss-plot-save', type=str2bool, required=True, metavar='T/F')
 parser.add_argument('--finetune', type=str2bool, default=False, metavar='T/F')
 parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 128)')
-parser.add_argument('--epochs', type=int, default=1000, metavar='N',
+parser.add_argument('--epochs', type=int, default=2000, metavar='N',
                     help='number of epochs to train (default: 10)')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='disables CUDA training')
@@ -40,14 +43,14 @@ device = torch.device("cuda" if args.cuda else "cpu")
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
 train_data = datasets.MNIST('./data/train/', train=True, download=True, transform=transforms.ToTensor())
-train_data, val_data = torch.utils.data.random_split(train_data, [int(0.95*len(train_data)),int(0.05*len(train_data))], generator=torch.Generator().manual_seed(42))
+#train_data, val_data = torch.utils.data.random_split(train_data, [int(0.95*len(train_data)),int(0.05*len(train_data))], generator=torch.Generator().manual_seed(42))
 test_data = datasets.MNIST('./data/train/', train=False, transform=transforms.ToTensor())
 
 
 
 #train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, **kwargs)
 test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.batch_size, shuffle=True, **kwargs)
-val_loader = torch.utils.data.DataLoader(val_data, batch_size=args.batch_size, shuffle=True, **kwargs)
+#val_loader = torch.utils.data.DataLoader(val_data, batch_size=args.batch_size, shuffle=True, **kwargs)
 #---------------------------prepare clean + aug data loader--------------------------------
 train_data_clean = list(train_data)
 for idx, _ in enumerate(train_data_clean):
@@ -72,8 +75,14 @@ for idx, _ in enumerate(train_data_aug_split):
         split_part[idx2] = tuple(L1)
     train_data_aug = train_data_aug + split_part
 train_data_clean_aug = train_data_clean + train_data_aug
+
+
+train_data_clean, val_data_clean = torch.utils.data.random_split(train_data_clean, [int(0.95*len(train_data_clean)),int(0.05*len(train_data_clean))], generator=torch.Generator().manual_seed(42))
+train_data_clean_aug, val_data_clean_aug = torch.utils.data.random_split(train_data_clean_aug, [int(0.95*len(train_data_clean_aug)),int(0.05*len(train_data_clean_aug))], generator=torch.Generator().manual_seed(42))
 train_loader_clean_aug = torch.utils.data.DataLoader(train_data_clean_aug, batch_size=args.batch_size, shuffle=True, **kwargs)
 train_loader_clean = torch.utils.data.DataLoader(train_data_clean, batch_size=args.batch_size, shuffle=True, **kwargs)
+val_loader_clean = torch.utils.data.DataLoader(val_data_clean, batch_size=args.batch_size, shuffle=True, **kwargs)
+val_loader_clean_aug = torch.utils.data.DataLoader(val_data_clean_aug, batch_size=args.batch_size, shuffle=True, **kwargs)
 #--------------------------------------------------------------------
 
 #---------------------------prepare data for finetune--------------------------------
@@ -103,6 +112,8 @@ for idx, _ in enumerate(test_data_aug_split):
         L1.append(1)
         split_part[idx2] = tuple(L1)
     test_data_aug = test_data_aug + split_part
+    
+finetune_data_train_test = train_data_clean + test_data_aug
 finetune_data_loader = torch.utils.data.DataLoader(test_data_aug, batch_size=args.batch_size, shuffle=True, **kwargs)
 #--------------------------------------------------------------------
 
@@ -269,26 +280,42 @@ def loss_function(x, y, clean):
 
 
 def train(epoch):
-    model.eval()
     train_loss = 0
     for batch_id,  (data,y, clean) in enumerate(train_loader_clean):
-        data = data.to(device)
-        y = y.to(device)
-        clean = clean.to(device)
-        optimizer.zero_grad()
-        loss = loss_function(data,y,clean)
-        loss.backward()
-        train_loss += loss.item()
-        optimizer.step()
-        if batch_id % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_id * len(data), len(train_loader_clean.dataset),
-                100. * batch_id / len(train_loader_clean),
-                loss.item() / len(data)))
+        if (data.size()[0] == args.batch_size): #resolve last batch issue later.
+            data = data.to(device)
+            y = y.to(device)
+            clean = clean.to(device)
+            optimizer.zero_grad()
+            loss = loss_function(data,y,clean)
+            loss.backward()
+            train_loss += loss.item()
+            optimizer.step()
+            if batch_id % args.log_interval == 0:
+                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                    epoch, batch_id * len(data), len(train_loader_clean.dataset),
+                    100. * batch_id / len(train_loader_clean),
+                    loss.item() / len(data)))
 
+    average_loss = train_loss / len(train_loader_clean.dataset)
     print('====> Epoch: {} Average loss: {:.4f}'.format(
-          epoch, train_loss / len(train_loader_clean.dataset)))
-    return
+          epoch, average_loss))
+    return average_loss
+
+def val(epoch):
+    validation_loss = 0
+    with torch.no_grad():
+        for batch_id, (data,y,clean) in enumerate(val_loader_clean):
+            data = data.to(device)
+            y = y.to(device)
+            clean = clean.to(device)
+            loss = loss_function(data,y,clean)
+            validation_loss += loss.item()
+    
+    average_loss = validation_loss / len(val_loader_clean.dataset)
+    print('====> Epoch: {} Average validation loss: {:.4f}'.format(
+          epoch, average_loss))
+    return average_loss
 
 qmx = [
         'qmx_conv1.weight',
@@ -316,18 +343,19 @@ NNpM = [
         'p_fc8.bias'
     ]
 #Equation (8). The loss function used for fine tuning
-def loss_function_FT(x_train, y_train, x_test):
-    train_batch_size = x_train.size()[0]
-    test_batch_size = x_test.size()[0]
-    #alpha = train_batch_size/(train_batch_size+test_batch_size)
-    alpha = 0.5
-    #print(y_train)
-    #ELBO_xym0_calc = ELBO_xym0(x_train,y_train,model)
-    #with torch.no_grad():
-    #    ELBO_xy_calc = ELBO_xy(x_train,y_train, model,device)
-    #    ELBO_x_calc = ELBO_x(x_test,model,device)
+def loss_function_FT(x,y,test):
 
-    loss = (alpha*torch.sum(ELBO_xy(x_train,y_train, model,device)) + (1-alpha)*torch.sum(ELBO_x(x_test,model,device)))
+    alpha = 0.5
+    num_test_data = torch.sum(test)
+    num_clean_data = test.size()[0] - num_test_data
+    if num_test_data == 0:
+        loss = (1/num_clean_data)*torch.sum(ELBO_xy(x,y,model,device))
+    elif num_clean_data == 0:
+        loss = (1/num_test_data)*torch.sum(ELBO_x(x,model,device))
+    else:
+        loss = torch.sum((1-test)*(1/num_clean_data)*ELBO_xy(x,y,model,device) + test*(1/num_test_data)*ELBO_x(x,model,device))
+
+    #loss = alpha*(1/train_batch_size)*torch.sum(ELBO_xy(x_train,y_train, model,device) + (1-alpha)*(1/test_batch_size)*torch.sum(ELBO_x(x_test,model,device)))
     return -loss
 
 def finetune(epoch,ready):
@@ -338,37 +366,44 @@ def finetune(epoch,ready):
                 param.requires_grad = True
             else:
                 param.requires_grad = False
-        
+        print('ready')
         ready = True
 
     model.train()
     FT_loss = 0 
-    for batch_id,  (data_train,y_train, train_set) in enumerate(train_loader_clean):
-        data_train = data_train.to(device)
-        y_train = y_train.to(device)
-        optimizer_FT.zero_grad()
-        loss = loss_function_FT(data_train,y_train,data_FT)
-        #torch.enable_grad()
-        #torch.set_grad_enabled(True)
-        loss.backward()
-        FT_loss += loss.item()
-        optimizer_FT.step()
-        if batch_id  % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_id * len(data_train), len(train_loader_clean.dataset),
-                100. * batch_id / len(train_loader_clean),
-                loss.item() / len(data_train)))
+    for batch_id, (data,y,train) in enumerate(finetune_data_loader):
+        if (data.size()[0] == args.batch_size):
+            data = data.to(device)
+            y = y.to(device)
+            train = train.to(device)
+            optimizer_FT.zero_grad()
+            loss = loss_function_FT(data,y,train)
+            loss.backward()
+            FT_loss += loss.item()
+            optimizer_FT.step()
+            if batch_id  % args.log_interval == 0:
+                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                    epoch, batch_id * len(data), len(finetune_data_loader.dataset),
+                    100. * batch_id / len(finetune_data_loader),
+                    loss.item() / len(data)))
+    average_loss = FT_loss / len(finetune_data_loader.dataset)
     print('====> Epoch: {} Average loss: {:.4f}'.format(
-        epoch, FT_loss / len(train_loader_clean.dataset)))
-    return
+        epoch,average_loss))
+    return average_loss
 
 def test():
     vertical_shift_range = np.arange(start=0.0,stop=1.0,step=0.1)
     if args.finetune:
         ready = False
-        for epoch in range(1,101):
+        ft_loss =[]
+        for epoch in range(1,1001):
             finetune(epoch,ready)
-        torch.save(model.state_dict(), '/media/hsy/DeepCAMA/weight817.pt') 
+            ft_loss.append(finetune(epoch,ready))
+            s = '/media/hsy/DeepCAMA/ft_weights/TrainCleanEpoches' + str(epoch) + '.pt'
+            torch.save(model.state_dict(), s) 
+            ft_loss = np.array(ft_loss)
+            np.save('ft_loss.npy',ft_loss)
+            ft_loss = list(ft_loss)
 
 
     model.eval()
@@ -444,17 +479,36 @@ if __name__ == "__main__":
         
         if args.train:
             #model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight821.pt', map_location=device))
+            loss_train_values = []
+            loss_val_values = []
             for epoch in range(1, args.epochs + 1):
-                train(epoch)
+                for phase in ['train', 'val']:
+                    if phase == 'train':
+                        model.train()
+                        loss_train_values.append(train(epoch))
+                        
+                    elif phase == 'val': 
+                        model.eval()
+                        loss_val_values.append(val(epoch))
+                    if epoch >=1 and epoch <= 1600:
+                        s = '/media/hsy/DeepCAMA/weights/TrainCleanEpoches' + str(epoch) + '.pt'
+                        torch.save(model.state_dict(), s)
+            if args.loss_plot_save:
+                loss_train_values = np.array(loss_train_values)
+                loss_val_values = np.array(loss_val_values)
+                np.save('loss_train_values.npy',loss_train_values)
+                np.save('loss_val_values.npy',loss_val_values)
+                        
             if args.train_save:
                 torch.save(model.state_dict(), '/media/hsy/DeepCAMA/TrainCleanEpoches1000.pt') 
         
         else:
-            model.load_state_dict(torch.load('/media/hsy/DeepCAMA/TrainCleanEpoches1000.pt', map_location=device))
+            model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weights/TrainCleanEpoches800.pt', map_location=device))
+            #model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight3_2.pt', map_location=device))
             model.eval()
             accuracy = test()
             print(accuracy)
-            #np.save('TrainVerTestWoFine.npy', accuracy)
+            #np.save('/media/hsy/DeepCAMA/results/TrainCleanEpoches800_TestVerWoFT.npy', accuracy)
         
     #np.save('OurWoFineClean_weight3_2.npy', accuracy_list)
     #plt.plot(vertical_shift_range,accuracy_list)
