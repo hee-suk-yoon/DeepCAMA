@@ -207,33 +207,56 @@ class DeepCAMA(nn.Module):
         y_onehot = F.one_hot(y_onehot,num_classes=10).view(-1,10) #y shape -> (#batch, 10)
         y_onehot = y_onehot.to(torch.float32)
         return y_onehot 
-    def forward(self, x,y, manipulated):
-        #x shape -> (#batch, channels=1, width, height)
-        #y shape -> (#batch)
-        #print(y)
-        
-        y_onehot = y.view(-1,1) #y shape -> (#batch, 1(which is the label))
-        y_onehot = F.one_hot(y_onehot,num_classes=10).view(-1,10) #y shape -> (#batch, 10)
-        y_onehot = y_onehot.to(torch.float32)
-        #print(y.size())
-        #q(m|x)
-        #print(x.size())
-        mu_q2, logvar_q2 = self.encode2(x)
-        #print(mu_q2)
-        m = self.reparameterize(mu_q2, logvar_q2)
-        #print(m)
-        if not manipulated:
-            m = m.zero_()
-        #print(m)
-        #(q(z|x,y,m))
-        mu_q1, logvar_q1 = self.encode1(x,y_onehot,m)
-        #print(mu_q1)
-        z = self.reparameterize(mu_q1, logvar_q1)
+    def forward(self, x,y, manipulated, z_sampled = 0, m_sampled = 0, phase = 0):
+        """
+            phase:
+                0 -> run through the whole network
+                1 -> run through q1 (q(z|x,y,m)) (encoder) 
+                2 -> run through q2 (z(m|x) (encoder)
+                3 -> run through p (decoder)
+        """
+        if phase == 0:
+            y_onehot = y.view(-1,1) #y shape -> (#batch, 1(which is the label))
+            y_onehot = F.one_hot(y_onehot,num_classes=10).view(-1,10) #y shape -> (#batch, 10)
+            y_onehot = y_onehot.to(torch.float32)
 
-        #p(x|y,z,m)
-        x_recon = self.decode(y_onehot,z,m)
-        return x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2
-    
+            mu_q2, logvar_q2 = self.encode2(x)
+
+            m = self.reparameterize(mu_q2, logvar_q2)
+
+            if not manipulated:
+                m = m.zero_()
+
+            mu_q1, logvar_q1 = self.encode1(x,y_onehot,m)
+
+            z = self.reparameterize(mu_q1, logvar_q1)
+
+            x_recon = self.decode(y_onehot,z,m)
+            return x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2
+        elif phase == 1:
+            y_onehot = y.view(-1,1) #y shape -> (#batch, 1(which is the label))
+            y_onehot = F.one_hot(y_onehot,num_classes=10).view(-1,10) #y shape -> (#batch, 10)
+            y_onehot = y_onehot.to(torch.float32)
+            
+            mu_q1 = logvar_q1 = self.encode1(x,y_onehot,m_sampled)
+            
+            z = self.reparameterize(mu_q1, logvar_q1)
+            return z 
+        
+        elif phase == 2:
+            mu_q2, logvar_q2 = self.encode2(x)
+            
+            m = self.reparameterize(mu_q2, logvar_q2)
+            return m 
+        
+        elif phase == 3:
+            y_onehot = y.view(-1,1) #y shape -> (#batch, 1(which is the label))
+            y_onehot = F.one_hot(y_onehot,num_classes=10).view(-1,10) #y shape -> (#batch, 10)
+            y_onehot = y_onehot.to(torch.float32)
+            x_recon = self.decode(y_onehot,z_sampled,m_sampled)
+            return x_recon
+            
+            
 # Reconstruction + KL divergence losses summed over all elements and batch
 def loss_function(x, y, clean):
     #BCE = F.binary_cross_entropy(recon_x.view(-1,784), x.view(-1, 784), reduction='sum')
@@ -344,21 +367,26 @@ NNpM = [
     ]
 #Equation (8). The loss function used for fine tuning
 def loss_function_FT(x,y,test):
-
+    #with torch.no_grad():
     alpha = 0.5
-    num_test_data = torch.sum(test)
-    num_clean_data = test.size()[0] - num_test_data
+    test_cpu = test.cpu()
+    num_test_data = torch.sum(test).cpu()
+    num_clean_data = (test.size()[0] - num_test_data).cpu()
     if num_test_data == 0:
         loss = (1/num_clean_data)*torch.sum(ELBO_xy(x,y,model,device))
     elif num_clean_data == 0:
         loss = (1/num_test_data)*torch.sum(ELBO_x(x,model,device))
     else:
-        loss = torch.sum((1-test)*(1/num_clean_data)*ELBO_xy(x,y,model,device) + test*(1/num_test_data)*ELBO_x(x,model,device))
+        loss = torch.sum((1-test_cpu)*(1/num_clean_data)*ELBO_xy(x,y,model,device) + test_cpu*(1/num_test_data)*ELBO_x(x,model,device))
 
     #loss = alpha*(1/train_batch_size)*torch.sum(ELBO_xy(x_train,y_train, model,device) + (1-alpha)*(1/test_batch_size)*torch.sum(ELBO_x(x_test,model,device)))
+    #loss = loss.to(device)
+    print(loss)
+    #print(model)
     return -loss
 
 def finetune(epoch,ready):
+    
     if not(ready):
         for name, param in model.named_parameters():
             #if name == ''
@@ -368,19 +396,23 @@ def finetune(epoch,ready):
                 param.requires_grad = False
         print('ready')
         ready = True
-
+    
     model.train()
     FT_loss = 0 
-    for batch_id, (data,y,train) in enumerate(finetune_data_loader):
+    for batch_id, (data,y,train) in enumerate(train_loader_clean_aug):
         if (data.size()[0] == args.batch_size):
             data = data.to(device)
             y = y.to(device)
             train = train.to(device)
             optimizer_FT.zero_grad()
             loss = loss_function_FT(data,y,train)
+            print('backward start')
             loss.backward()
+            print('backward stop')
             FT_loss += loss.item()
             optimizer_FT.step()
+
+
             if batch_id  % args.log_interval == 0:
                 print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                     epoch, batch_id * len(data), len(finetune_data_loader.dataset),

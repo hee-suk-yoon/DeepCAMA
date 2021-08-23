@@ -115,8 +115,10 @@ def pred_logRatio(x, y, z_sampled, m_sampled, mu_q1, logvar_q1, model, device):
 def ELBO_x(x,model,device):
     #Calculates ELBO(x)
     #with torch.no_grad():
-    underflow_const = 400
-    sum = torch.zeros(x.size()[0]).to(device)
+    x_cpu = x.cpu()
+    model_cpu = model.cpu()
+    underflow_const = 200
+    sum = torch.zeros(x.size()[0]).cpu().type(torch.DoubleTensor)
     """
     ELBO_x_rem = []
 
@@ -132,15 +134,26 @@ def ELBO_x(x,model,device):
     sum_temp = sum_temp/10
     """
     for i in range(0,10):
-        yc = i*torch.ones(x.size()[0]).type(torch.int64).to(device)
+        yc = i*torch.ones(x.size()[0]).type(torch.int64).cpu()
 
         #ELBO(x,yc)
-        a=ELBO_xy(x,i*torch.ones(x.size()[0]).type(torch.int64).to(device),model,device)
-        #print(a)
-        print(torch.exp(a+underflow_const))
-        sum = sum + torch.exp(ELBO_xy(x,i*torch.ones(x.size()[0]).type(torch.int64).to(device),model,device))
+        a=ELBO_xy(x_cpu,yc,model_cpu,device).type(torch.DoubleTensor)
+        #a=ELBO_xy(x,i*torch.ones(x.size()[0]).type(torch.int64).to(device),model.cpu(),device).cpu().type(torch.DoubleTensor)
+        #if (i == 1):
+            #print(a)
+        #print(torch.exp(a+underflow_const))
+        #sum = sum + torch.exp(underflow_const+ELBO_xy(x,i*torch.ones(x.size()[0]).type(torch.int64).to(device),model,device))
+        sum = sum + torch.exp(underflow_const+a)
+    
+    return_val = torch.log(sum).type(torch.float32) - 200
+    #print(x)
+    #print(sum)
+    #print(sum+1e-4)
+    #print(torch.log(sum))
+    #print(return_val)
     #print(torch.log(sum+1e-4))
-    return torch.log(sum+1e-4) #adding 1e-4 to prevent -inf (when sum goes to 0)
+    #return torch.log(sum+1e-4)  #adding 1e-4 to prevent -inf (when sum goes to 0)
+    return return_val
 
 def ELBO_xy(x, y, model,device):
     #Calculates ELBO(x,y)
@@ -148,16 +161,22 @@ def ELBO_xy(x, y, model,device):
     #x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(x,y,manipulated=True)
     #with torch.no_grad():
             #calculate  E_q(z,m|x,y)[(log p(x|y,z,m))]
-    mu_q2, logvar_q2 = model.encode2(x)
-    m_sampled = model.reparameterize(mu_q2, logvar_q2)
+    x_cpu = x.cpu()
+    y_cpu = y.cpu()
+    model_cpu = model.cpu()
+    mu_q2, logvar_q2 = model_cpu.encode2(x_cpu)
+    m_sampled = model_cpu.reparameterize(mu_q2, logvar_q2)
+    #print(m_sampled) 
 
-    BCE = torch.zeros(x.size()[0]).to(device)
+    #BCE = torch.zeros(x.size()[0]).to(device)
+    BCE = torch.zeros(x_cpu.size()[0]).cpu()
     K = 20
-    mu_q1, logvar_q1 = model.encode1(x,model.onehot(y),m_sampled)
+    mu_q1, logvar_q1 = model_cpu.encode1(x_cpu,model_cpu.onehot(y_cpu),m_sampled)
     for j in range(0,K):
-        z_sampled = model.reparameterize(mu_q1, logvar_q1)
-        x_recon = model.decode(model.onehot(y),z_sampled,m_sampled)
-        log_pxyzm = torch.sum(torch.mul(x.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x.view(-1,784), torch.log(1-x_recon.view(-1,784)+1e-4)), dim=1)
+        print(j)
+        z_sampled = model_cpu.reparameterize(mu_q1, logvar_q1)
+        x_recon = model_cpu.decode(model_cpu.onehot(y_cpu),z_sampled,m_sampled)
+        log_pxyzm = torch.sum(torch.mul(x_cpu.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x_cpu.view(-1,784), torch.log(1-x_recon.view(-1,784)+1e-4)), dim=1).cpu()
         BCE = BCE+ log_pxyzm
     BCE = (1/K) * BCE
     #KL(q(z,m|x,y))
