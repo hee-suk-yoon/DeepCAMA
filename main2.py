@@ -205,6 +205,7 @@ class DeepCAMA(nn.Module):
         y_onehot = y.view(-1,1) #y shape -> (#batch, 1(which is the label))
         y_onehot = F.one_hot(y_onehot,num_classes=10).view(-1,10) #y shape -> (#batch, 10)
         y_onehot = y_onehot.to(torch.float32)
+        #y_onehot = y_onehot.to(torch.float64)
         return y_onehot 
     def forward(self, x,y=0, manipulated=False, z_sampled = 0, m_sampled = 0, phase = 0):
         """
@@ -218,6 +219,7 @@ class DeepCAMA(nn.Module):
             y_onehot = y.view(-1,1) #y shape -> (#batch, 1(which is the label))
             y_onehot = F.one_hot(y_onehot,num_classes=10).view(-1,10) #y shape -> (#batch, 10)
             y_onehot = y_onehot.to(torch.float32)
+            #y_onehot = y_onehot.to(torch.float64)
 
             mu_q2, logvar_q2 = self.encode2(x)
 
@@ -236,7 +238,9 @@ class DeepCAMA(nn.Module):
             y_onehot = y.view(-1,1) #y shape -> (#batch, 1(which is the label))
             y_onehot = F.one_hot(y_onehot,num_classes=10).view(-1,10) #y shape -> (#batch, 10)
             y_onehot = y_onehot.to(torch.float32)
-            
+            #y_onehot = y_onehot.to(torch.DoubleTensor)
+            #y_onehot = y_onehot.to(torch.float64)
+
             mu_q1, logvar_q1 = self.encode1(x,y_onehot,m_sampled)
             
             z = self.reparameterize(mu_q1, logvar_q1)
@@ -252,6 +256,8 @@ class DeepCAMA(nn.Module):
             y_onehot = y.view(-1,1) #y shape -> (#batch, 1(which is the label))
             y_onehot = F.one_hot(y_onehot,num_classes=10).view(-1,10) #y shape -> (#batch, 10)
             y_onehot = y_onehot.to(torch.float32)
+            #y_onehot = y_onehot.to(torch.float64)
+
             x_recon = self.decode(y_onehot,z_sampled,m_sampled)
             return x_recon
             
@@ -266,7 +272,7 @@ def loss_function(x, y, clean):
     mu_q2, logvar_q2, m_sampled = model(x=x,phase=2)
     
     if num_aug_data == 0:
-        loss = torch.sum(ELBO_xym0(x,y,model,device)) 
+        loss = torch.sum(ELBO_xym0(x,y,model)) 
     elif num_clean_data == 0:
         #loss = torch.sum((1/num_aug_data)*ELBO_xy_calc)
         #loss = torch.sum((1/num_aug_data)* ELBO_xy(x,y,model,device))
@@ -355,7 +361,7 @@ NNpM = [
         'p_fc8.bias'
     ]
 #Equation (8). The loss function used for fine tuning
-def loss_function_FT(x,y,test):
+def loss_function_FT(x,y,test,ELBOx):
     #with torch.no_grad():
     alpha = 0.5
 
@@ -366,7 +372,17 @@ def loss_function_FT(x,y,test):
     elif num_clean_data == 0:
         loss = (1/num_test_data)*torch.sum(ELBO_x(x,model,device))
     else:
-        loss = torch.sum((1-test)*(1/num_clean_data)*ELBO_xy(x,y,model,device) + test*(1/num_test_data)*ELBO_x(x,model,device))
+        #print('here')
+        #print((1-test)*(1/num_clean_data)*ELBO_xy(x,y,model,device))
+        #print(test*(1/num_test_data)*ELBO_x(x,model,device))
+        if ELBOx:
+            loss = torch.sum(test*(1/num_test_data)*ELBO_x(x,model,device))
+            #ELBOx = False
+        else:
+            loss = torch.sum((1-test)*(1/num_clean_data)*ELBO_xy(x,y,model,device))
+            #print('here2')
+            #ELBOx = True
+        #loss = torch.sum((1-test)*(1/num_clean_data)*ELBO_xy(x,y,model,device) + test*(1/num_test_data)*ELBO_x(x,model,device))
 
     #loss = alpha*(1/train_batch_size)*torch.sum(ELBO_xy(x_train,y_train, model,device) + (1-alpha)*(1/test_batch_size)*torch.sum(ELBO_x(x_test,model,device)))
     #loss = loss.to(device)
@@ -389,17 +405,33 @@ def finetune(epoch,ready):
     
     model.train()
     FT_loss = 0 
+    
     for batch_id, (data,y,train) in enumerate(train_loader_clean_aug):
+    #for batch_id, (data,y,train) in enumerate(finetune_data_loader):
+        ELBOx = True
         if (data.size()[0] == args.batch_size):
+            loss_temp = 0
             data = data.to(device)
             y = y.to(device)
             train = train.to(device)
             optimizer_FT.zero_grad()
-            loss = loss_function_FT(data,y,train)
-            #print('backward start')
+            loss = loss_function_FT(data,y,train,ELBOx)
             loss.backward()
+            FT_loss += loss.item()
+            loss_temp += loss.item()
+            ELBOx = False
+            loss = loss_function_FT(data,y,train,ELBOx)
+            loss.backward()
+            """
+            for param in model.parameters():
+                if param.requires_grad == True:
+                    print("param.data",torch.isfinite(param.data).all())
+                    print("param.grad.data",torch.isfinite(param.grad.data).all(),"\n")
+                    print(param.grad.data)
+            """
             #print('backward stop')
             FT_loss += loss.item()
+            loss_temp += loss.item()
             optimizer_FT.step()
 
 
@@ -407,7 +439,7 @@ def finetune(epoch,ready):
                 print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                     epoch, batch_id * len(data), len(train_loader_clean_aug.dataset),
                     100. * batch_id / len(train_loader_clean_aug),
-                    loss.item() / len(data)))
+                    loss_temp / len(data)))
     average_loss = FT_loss / len(train_loader_clean_aug.dataset)
     print('====> Epoch: {} Average loss: {:.4f}'.format(
         epoch,average_loss))
@@ -456,11 +488,14 @@ def test():
 model = DeepCAMA().to(device)
 
 optimizer = optim.Adam(model.parameters(), lr=(1e-4+1e-5)/2)
-optimizer_FT = optim.Adam(model.parameters(), lr = 1e-5)
+optimizer_FT = optim.Adam(model.parameters(), lr = 1e-4)
 if __name__ == "__main__":
     #for name, param in model.named_parameters():
     #    if param.requires_grad:
     #        print(name)
+    for name, param in model.named_parameters():
+        #if name == ''
+        print(name)
     """
     for i, (data, y) in enumerate(test_loader):
         #mu_q2, logvar_q2, m_sampled = model(x=data.to(device),phase=2)
@@ -506,7 +541,8 @@ if __name__ == "__main__":
         x_created = model.decode(model.onehot(y),z_sample,m_sample)
         save_image(x_created.view(1,1,28,28),'created5.png')
         """
-        
+
+
         if args.train:
             #model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight821.pt', map_location=device))
             loss_train_values = []

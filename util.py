@@ -116,19 +116,20 @@ def ELBO_x(x,model,device):
     #Calculates ELBO(x)
     #with torch.no_grad():
     x_device = x.to(device)
-    underflow_const = 500
+    underflow_const = 600
     sum = torch.zeros(x.size()[0]).type(torch.DoubleTensor).to(device)
 
     for i in range(0,10):
         yc = i*torch.ones(x.size()[0]).type(torch.int64).to(device)
 
         a=ELBO_xy(x_device,yc,model,device).type(torch.DoubleTensor)
-
+        #print(a)
         sum = sum + torch.exp(underflow_const+a).to(device)
-    
-
-    return_val = torch.log(sum) - underflow_const
-
+    #print('here')
+    #print(sum)
+    #print(torch.log(sum))
+    return_val = (torch.log(sum) - underflow_const).type(torch.float32)
+    #print(return_val)
     return return_val
 
 
@@ -163,6 +164,42 @@ def ELBO_xy(x, y, model,device):
     py = 0.1
 
     return math.log(py) + BCE + KLD
+
+
+def ELBO_xy_hp(x, y, model,device):
+    #Calculates ELBO(x,y)
+    #x and y should already be in device. 
+    #x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(x,y,manipulated=True)
+    #with torch.no_grad():
+            #calculate  E_q(z,m|x,y)[(log p(x|y,z,m))]
+
+    #x_device = x.to(device)
+    mu_q2, logvar_q2, m_sampled = model(x=x,phase=2)
+    #print(m_sampled) 
+
+    #BCE = torch.zeros(x.size()[0]).to(device)
+    BCE = torch.zeros(x.size()[0]).type(torch.DoubleTensor).to(device)
+    K = 1
+    #mu_q1, logvar_q1 = model_cpu.encode1(x_cpu,model_cpu.onehot(y_cpu),m_sampled)
+    
+    for j in range(0,K):
+            mu_q1, logvar_q1, z_sampled = model(x=x,y=y,m_sampled=m_sampled,phase=1)
+            x_recon = model(x=x,y=y,z_sampled=z_sampled,m_sampled=m_sampled,phase=3)
+            log_pxyzm = torch.sum(torch.mul(x.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x.view(-1,784), torch.log(1-x_recon.view(-1,784)+1e-4)), dim=1)
+            BCE = BCE+ log_pxyzm
+
+    BCE = (1/K) * BCE
+    
+    #KL(q(z,m|x,y))
+    logvar_cat = torch.cat((logvar_q1, logvar_q2), dim = 1)
+    mu_cat = torch.cat((mu_q1, mu_q2), dim = 1)
+    KLD =  0.5 * torch.sum(1 + logvar_cat - mu_cat.pow(2) - logvar_cat.exp(), dim=1)
+    #print(KLD.size())
+    #p(y)
+    py = 0.1
+
+    return math.log(py) + BCE + KLD
+
 def ELBO_xy_logterm(x, y, m_sampled, model,device):
     mu_q2, logvar_q2, m_sampled = model(x=x,phase=2)
     BCE = torch.zeros(x.size()[0]).to(device)
