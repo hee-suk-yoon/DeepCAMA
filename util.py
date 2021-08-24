@@ -115,10 +115,9 @@ def pred_logRatio(x, y, z_sampled, m_sampled, mu_q1, logvar_q1, model, device):
 def ELBO_x(x,model,device):
     #Calculates ELBO(x)
     #with torch.no_grad():
-    x_cpu = x.cpu()
-    model_cpu = model.cpu()
-    underflow_const = 200
-    sum = torch.zeros(x.size()[0]).cpu().type(torch.DoubleTensor)
+    x_device = x.to(device)
+    underflow_const = 500
+    sum = torch.zeros(x.size()[0]).type(torch.DoubleTensor).to(device)
     """
     ELBO_x_rem = []
 
@@ -134,18 +133,28 @@ def ELBO_x(x,model,device):
     sum_temp = sum_temp/10
     """
     for i in range(0,10):
-        yc = i*torch.ones(x.size()[0]).type(torch.int64).cpu()
+        yc = i*torch.ones(x.size()[0]).type(torch.int64).to(device)
 
         #ELBO(x,yc)
-        a=ELBO_xy(x_cpu,yc,model_cpu,device).type(torch.DoubleTensor)
+        a=ELBO_xy(x_device,yc,model,device).type(torch.DoubleTensor)
         #a=ELBO_xy(x,i*torch.ones(x.size()[0]).type(torch.int64).to(device),model.cpu(),device).cpu().type(torch.DoubleTensor)
         #if (i == 1):
             #print(a)
         #print(torch.exp(a+underflow_const))
         #sum = sum + torch.exp(underflow_const+ELBO_xy(x,i*torch.ones(x.size()[0]).type(torch.int64).to(device),model,device))
-        sum = sum + torch.exp(underflow_const+a)
+        sum = sum + torch.exp(underflow_const+a).to(device)
     
-    return_val = torch.log(sum).type(torch.float32) - 200
+    #print(sum)
+    #xx = torch.ones(x.size()[0]).type(torch.DoubleTensor).to(device)
+    #xx = xx * 1e-320
+    #temp = torch.where(sum > 0, sum, xx)
+    #print(torch.log(sum))
+    #print(temp)
+    #print(torch.log(temp))
+    return_val = torch.log(sum) - underflow_const
+    #print(return_val)
+    #return_val = torch.log(sum).type(torch.float32) - underflow_const
+    #print(return_val)
     #print(x)
     #print(sum)
     #print(sum+1e-4)
@@ -153,7 +162,10 @@ def ELBO_x(x,model,device):
     #print(return_val)
     #print(torch.log(sum+1e-4))
     #return torch.log(sum+1e-4)  #adding 1e-4 to prevent -inf (when sum goes to 0)
+    #print(return_val)
+    #return return_val.type(torch.float32)
     return return_val
+
 
 def ELBO_xy(x, y, model,device):
     #Calculates ELBO(x,y)
@@ -161,24 +173,22 @@ def ELBO_xy(x, y, model,device):
     #x_recon, mu_q1, logvar_q1, mu_q2, logvar_q2 = model(x,y,manipulated=True)
     #with torch.no_grad():
             #calculate  E_q(z,m|x,y)[(log p(x|y,z,m))]
-    x_cpu = x.cpu()
-    y_cpu = y.cpu()
-    model_cpu = model.cpu()
-    mu_q2, logvar_q2 = model_cpu.encode2(x_cpu)
-    m_sampled = model_cpu.reparameterize(mu_q2, logvar_q2)
+    mu_q2, logvar_q2, m_sampled = model(x=x,phase=2)
     #print(m_sampled) 
 
     #BCE = torch.zeros(x.size()[0]).to(device)
-    BCE = torch.zeros(x_cpu.size()[0]).cpu()
-    K = 20
-    mu_q1, logvar_q1 = model_cpu.encode1(x_cpu,model_cpu.onehot(y_cpu),m_sampled)
+    BCE = torch.zeros(x.size()[0]).to(device)
+    K = 1
+    #mu_q1, logvar_q1 = model_cpu.encode1(x_cpu,model_cpu.onehot(y_cpu),m_sampled)
+    
     for j in range(0,K):
-        print(j)
-        z_sampled = model_cpu.reparameterize(mu_q1, logvar_q1)
-        x_recon = model_cpu.decode(model_cpu.onehot(y_cpu),z_sampled,m_sampled)
-        log_pxyzm = torch.sum(torch.mul(x_cpu.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x_cpu.view(-1,784), torch.log(1-x_recon.view(-1,784)+1e-4)), dim=1).cpu()
-        BCE = BCE+ log_pxyzm
+            mu_q1, logvar_q1, z_sampled = model(x=x,y=y,m_sampled=m_sampled,phase=1)
+            x_recon = model(x=x,y=y,z_sampled=z_sampled,m_sampled=m_sampled,phase=3)
+            log_pxyzm = torch.sum(torch.mul(x.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x.view(-1,784), torch.log(1-x_recon.view(-1,784)+1e-4)), dim=1)
+            BCE = BCE+ log_pxyzm
+
     BCE = (1/K) * BCE
+    
     #KL(q(z,m|x,y))
     logvar_cat = torch.cat((logvar_q1, logvar_q2), dim = 1)
     mu_cat = torch.cat((mu_q1, mu_q2), dim = 1)
@@ -188,8 +198,27 @@ def ELBO_xy(x, y, model,device):
     py = 0.1
 
     return math.log(py) + BCE + KLD
+def ELBO_xy_logterm(x, y, m_sampled, model,device):
+    mu_q2, logvar_q2, m_sampled = model(x=x,phase=2)
+    BCE = torch.zeros(x.size()[0]).to(device)
+    K = 1
+    
+    for j in range(0,K):
+            mu_q1, logvar_q1, z_sampled = model(x=x,y=y,m_sampled=m_sampled,phase=1)
+            x_recon = model(x=x,y=y,z_sampled=z_sampled,m_sampled=m_sampled,phase=3)
+            log_pxyzm = torch.sum(torch.mul(x.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x.view(-1,784), torch.log(1-x_recon.view(-1,784)+1e-4)), dim=1)
+            BCE = BCE+ log_pxyzm
+    #BCE = (1/K) * BCE
+    
+    #KL(q(z,m|x,y))
+    logvar_cat = torch.cat((logvar_q1, logvar_q2), dim = 1)
+    mu_cat = torch.cat((mu_q1, mu_q2), dim = 1)
+    KLD =  0.5 * torch.sum(1 + logvar_cat - mu_cat.pow(2) - logvar_cat.exp(), dim=1)
+    #print(KLD.size())
+    #p(y)
+    py = 0.1
 
-
+    return math.log(py) + BCE + KLD
 def ELBO_xym0(x, y, model):
     #Calculates ELBO(x,y,do(m=0))
 
@@ -197,3 +226,31 @@ def ELBO_xym0(x, y, model):
     BCE = torch.sum(torch.mul(x.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x.view(-1,784), torch.log(1-x_recon.view(-1,784)+1e-4)), dim=1)
     KLD =  0.5 * torch.sum(1 + logvar_q1 - mu_q1.pow(2) - logvar_q1.exp(), dim=1)
     return BCE + KLD + math.log(0.1)
+
+def ELBO_xym0_logterm(x,y, model,device):
+
+    m_sampled = torch.zeros((x.size()[0],32)).type(torch.FloatTensor).to(device)
+    mu_q1, logvar_q1, z_sampled = model(x=x,y=y,m_sampled=m_sampled,phase=1)
+    
+    #log p(x|y,z,m=0) 
+    x_recon = model(x=x,y=y,z_sampled=z_sampled,m_sampled=m_sampled,phase=3)
+    BCE = torch.sum(torch.mul(x.view(-1,784), torch.log(x_recon.view(-1,784)+1e-4)) + torch.mul(1-x.view(-1,784), torch.log(1-x_recon.view(-1,784)+1e-4)), dim=1)
+    
+    #log p(y) 
+    py = 0.1
+    log_py = math.log(py)
+    
+    #calculate log p(z)
+    zero_tensor = torch.zeros(z_sampled.size()).to(device)
+    one_tensor = torch.ones(z_sampled.size()).to(device)
+    temp = log_gaussian_torch(z_sampled,zero_tensor,one_tensor)
+    log_pz = torch.sum(temp, dim = 1).to(device)
+
+    #calculated log q(z|x,y,m=0)
+    temp = log_gaussian_torch(z_sampled,mu_q1,torch.exp(logvar_q1))
+    log_q1 = torch.sum(temp, dim =1).to(device)
+    
+    return BCE + log_py + log_pz - log_q1
+    
+    
+    

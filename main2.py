@@ -22,9 +22,9 @@ parser.add_argument('--train', type=str2bool, required=True, metavar='T/F')
 parser.add_argument('--train-save', type=str2bool, required=True, metavar='T/F')
 parser.add_argument('--loss-plot-save', type=str2bool, required=True, metavar='T/F')
 parser.add_argument('--finetune', type=str2bool, default=False, metavar='T/F')
-parser.add_argument('--batch-size', type=int, default=128, metavar='N',
+parser.add_argument('--batch-size', type=int, default=128*2, metavar='N',
                     help='input batch size for training (default: 128)')
-parser.add_argument('--epochs', type=int, default=100, metavar='N',
+parser.add_argument('--epochs', type=int, default=1000, metavar='N',
                     help='number of epochs to train (default: 10)')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='disables CUDA training')
@@ -258,35 +258,15 @@ class DeepCAMA(nn.Module):
             
 # Reconstruction + KL divergence losses summed over all elements and batch
 def loss_function(x, y, clean):
-    #BCE = F.binary_cross_entropy(recon_x.view(-1,784), x.view(-1, 784), reduction='sum')
-
-    # see Appendix B from VAE paper:
-    # Kingma and Welling. Auto-Encoding Variational Bayes. ICLR, 2014
-    # https://arxiv.org/abs/1312.6114
-    # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
-    #`KLD = -0.5 * torch.sum(1 + logvar_q1 - mu_q1.pow(2) - logvar_q1.exp())
-    batch_size = x.size()[0]
-    #loss = torch.sum((1/batch_size)*ELBO_xym0(x,y, model))
-    #loss.requires_grad
-    #return -loss
     
     alpha = 0.5
-    #with torch.no_grad():
-        #ELBO_xym0_calc = ELBO_xym0(x,y,model) #size [128
-        #ELBO_xy_calc = ELBO_xy(x,y,model,device) #size [128, 128] ###error
-    #print(ELBO_xym0_calc)
-    #print(ELBO_xym0(x,y,model))
-    #are they different?
-    #print(1-clean)
-    #print(clean.size())
+
     num_aug_data = torch.sum(clean)
     num_clean_data = clean.size()[0] - num_aug_data
+    mu_q2, logvar_q2, m_sampled = model(x=x,phase=2)
+    
     if num_aug_data == 0:
-        #temp_ELBO_xym0_calc = Variable(ELBO_xym0_calc.data, requires_grad=True)
-        #loss = torch.sum(temp_ELBO_xym0_calc).to(device)
-        #loss = torch.sum((1/num_clean_data)*ELBO_xym0_calc) 
-        #loss = torch.sum((1/num_clean_data)*ELBO_xym0(x,y,model)) 
-        loss = torch.sum(ELBO_xym0(x,y,model)) 
+        loss = torch.sum(ELBO_xym0(x,y,model,device)) 
     elif num_clean_data == 0:
         #loss = torch.sum((1/num_aug_data)*ELBO_xy_calc)
         #loss = torch.sum((1/num_aug_data)* ELBO_xy(x,y,model,device))
@@ -309,20 +289,21 @@ def train(epoch):
         dataloader = train_loader_clean_aug
         
     for batch_id,  (data,y, clean) in enumerate(dataloader):
-        if (data.size()[0] == args.batch_size): #resolve last batch issue later.
-            data = data.to(device)
-            y = y.to(device)
-            clean = clean.to(device)
-            optimizer.zero_grad()
+        data = data.to(device)
+        y = y.to(device)
+        clean = clean.to(device)
+        optimizer.zero_grad()
+        for num_sampling in range(0,1):
             loss = loss_function(data,y,clean)
-            loss.backward()
             train_loss += loss.item()
-            optimizer.step()
-            if batch_id % args.log_interval == 0:
-                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                    epoch, batch_id * len(data), len(dataloader.dataset),
-                    100. * batch_id / len(dataloader),
-                    loss.item() / len(data)))
+            loss.backward()
+        train_loss = train_loss/(num_sampling+1)
+        optimizer.step()
+        if batch_id % args.log_interval == 0:
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                epoch, batch_id * len(data), len(dataloader.dataset),
+                100. * batch_id / len(dataloader),
+                loss.item() / len(data)))
 
     average_loss = train_loss / len(dataloader.dataset)
     print('====> Epoch: {} Average loss: {:.4f}'.format(
@@ -377,18 +358,19 @@ NNpM = [
 def loss_function_FT(x,y,test):
     #with torch.no_grad():
     alpha = 0.5
-    test_cpu = test.cpu()
-    num_test_data = torch.sum(test).cpu()
-    num_clean_data = (test.size()[0] - num_test_data).cpu()
+
+    num_test_data = torch.sum(test)
+    num_clean_data = (test.size()[0] - num_test_data)
     if num_test_data == 0:
         loss = (1/num_clean_data)*torch.sum(ELBO_xy(x,y,model,device))
     elif num_clean_data == 0:
         loss = (1/num_test_data)*torch.sum(ELBO_x(x,model,device))
     else:
-        loss = torch.sum((1-test_cpu)*(1/num_clean_data)*ELBO_xy(x,y,model,device) + test_cpu*(1/num_test_data)*ELBO_x(x,model,device))
+        loss = torch.sum((1-test)*(1/num_clean_data)*ELBO_xy(x,y,model,device) + test*(1/num_test_data)*ELBO_x(x,model,device))
 
     #loss = alpha*(1/train_batch_size)*torch.sum(ELBO_xy(x_train,y_train, model,device) + (1-alpha)*(1/test_batch_size)*torch.sum(ELBO_x(x_test,model,device)))
     #loss = loss.to(device)
+    print('here')
     print(loss)
     #print(model)
     return -loss
@@ -414,19 +396,19 @@ def finetune(epoch,ready):
             train = train.to(device)
             optimizer_FT.zero_grad()
             loss = loss_function_FT(data,y,train)
-            print('backward start')
+            #print('backward start')
             loss.backward()
-            print('backward stop')
+            #print('backward stop')
             FT_loss += loss.item()
             optimizer_FT.step()
 
 
             if batch_id  % args.log_interval == 0:
                 print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                    epoch, batch_id * len(data), len(finetune_data_loader.dataset),
-                    100. * batch_id / len(finetune_data_loader),
+                    epoch, batch_id * len(data), len(train_loader_clean_aug.dataset),
+                    100. * batch_id / len(train_loader_clean_aug),
                     loss.item() / len(data)))
-    average_loss = FT_loss / len(finetune_data_loader.dataset)
+    average_loss = FT_loss / len(train_loader_clean_aug.dataset)
     print('====> Epoch: {} Average loss: {:.4f}'.format(
         epoch,average_loss))
     return average_loss
@@ -479,8 +461,16 @@ if __name__ == "__main__":
     #for name, param in model.named_parameters():
     #    if param.requires_grad:
     #        print(name)
-
-    #torch.autograd.set_detect_anomaly(True)
+    """
+    for i, (data, y) in enumerate(test_loader):
+        #mu_q2, logvar_q2, m_sampled = model(x=data.to(device),phase=2)
+        #print(m_sampled.type())
+        data = data.to(device)
+        y = y.to(device)
+        ELBO_xym0_logterm(data,y,model,device)
+        break
+    """
+    torch.autograd.set_detect_anomaly(True)
     if args.run: 
         """
         model.load_state_dict(torch.load('/media/hsy/DeepCAMA/TrainHor6.pt', map_location=device))
@@ -531,16 +521,16 @@ if __name__ == "__main__":
                         model.eval()
                         loss_val_values.append(val(epoch))
                     if epoch >=1 and epoch <= 1600:
-                        s = '/media/hsy/DeepCAMA/trainVer_weights/TrainCleanEpoches' + str(epoch) + '.pt'
+                        s = '/media/hsy/DeepCAMA/main2_trainVer_weights/TrainCleanEpoches' + str(epoch) + '.pt'
                         torch.save(model.state_dict(), s)
             if args.loss_plot_save:
                 loss_train_values = np.array(loss_train_values)
                 loss_val_values = np.array(loss_val_values)
-                np.save('loss_train_values.npy',loss_train_values)
-                np.save('loss_val_values.npy',loss_val_values)
+                np.save('main2_loss_train_values.npy',loss_train_values)
+                np.save('main2_loss_val_values.npy',loss_val_values)
                         
             if args.train_save:
-                torch.save(model.state_dict(), '/media/hsy/DeepCAMA/TrainVer824.pt') 
+                torch.save(model.state_dict(), '/media/hsy/DeepCAMA/824.pt') 
         
         else:
             model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weights/TrainCleanEpoches800.pt', map_location=device))
