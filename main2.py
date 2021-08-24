@@ -370,8 +370,8 @@ def loss_function_FT(x,y,test):
 
     #loss = alpha*(1/train_batch_size)*torch.sum(ELBO_xy(x_train,y_train, model,device) + (1-alpha)*(1/test_batch_size)*torch.sum(ELBO_x(x_test,model,device)))
     #loss = loss.to(device)
-    print('here')
-    print(loss)
+    #print('here')
+    #print(loss)
     #print(model)
     return -loss
 
@@ -470,7 +470,7 @@ if __name__ == "__main__":
         ELBO_xym0_logterm(data,y,model,device)
         break
     """
-    torch.autograd.set_detect_anomaly(True)
+    #torch.autograd.set_detect_anomaly(True)
     if args.run: 
         """
         model.load_state_dict(torch.load('/media/hsy/DeepCAMA/TrainHor6.pt', map_location=device))

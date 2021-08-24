@@ -118,52 +118,17 @@ def ELBO_x(x,model,device):
     x_device = x.to(device)
     underflow_const = 500
     sum = torch.zeros(x.size()[0]).type(torch.DoubleTensor).to(device)
-    """
-    ELBO_x_rem = []
 
-    for i in range(0,10):
-        a=ELBO_xy(x,i*torch.ones(x.size()[0]).type(torch.int64).to(device),model,device).cpu()
-        ELBO_x_rem.append(a)
-
-    sum_temp = torch.zeros(x.size()[0]).cpu()   
-    for i in range(0,10):
-        #sum_temp = sum_temp + ELBO_x_rem[i] 
-        max_min = 
-    
-    sum_temp = sum_temp/10
-    """
     for i in range(0,10):
         yc = i*torch.ones(x.size()[0]).type(torch.int64).to(device)
 
-        #ELBO(x,yc)
         a=ELBO_xy(x_device,yc,model,device).type(torch.DoubleTensor)
-        #a=ELBO_xy(x,i*torch.ones(x.size()[0]).type(torch.int64).to(device),model.cpu(),device).cpu().type(torch.DoubleTensor)
-        #if (i == 1):
-            #print(a)
-        #print(torch.exp(a+underflow_const))
-        #sum = sum + torch.exp(underflow_const+ELBO_xy(x,i*torch.ones(x.size()[0]).type(torch.int64).to(device),model,device))
+
         sum = sum + torch.exp(underflow_const+a).to(device)
     
-    #print(sum)
-    #xx = torch.ones(x.size()[0]).type(torch.DoubleTensor).to(device)
-    #xx = xx * 1e-320
-    #temp = torch.where(sum > 0, sum, xx)
-    #print(torch.log(sum))
-    #print(temp)
-    #print(torch.log(temp))
+
     return_val = torch.log(sum) - underflow_const
-    #print(return_val)
-    #return_val = torch.log(sum).type(torch.float32) - underflow_const
-    #print(return_val)
-    #print(x)
-    #print(sum)
-    #print(sum+1e-4)
-    #print(torch.log(sum))
-    #print(return_val)
-    #print(torch.log(sum+1e-4))
-    #return torch.log(sum+1e-4)  #adding 1e-4 to prevent -inf (when sum goes to 0)
-    #print(return_val)
-    #return return_val.type(torch.float32)
+
     return return_val
 
 
