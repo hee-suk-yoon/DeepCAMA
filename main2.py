@@ -22,9 +22,9 @@ parser.add_argument('--train', type=str2bool, required=True, metavar='T/F')
 parser.add_argument('--train-save', type=str2bool, required=True, metavar='T/F')
 parser.add_argument('--loss-plot-save', type=str2bool, required=True, metavar='T/F')
 parser.add_argument('--finetune', type=str2bool, default=False, metavar='T/F')
-parser.add_argument('--batch-size', type=int, default=128*2, metavar='N',
+parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 128)')
-parser.add_argument('--epochs', type=int, default=1000, metavar='N',
+parser.add_argument('--epochs', type=int, default=2000, metavar='N',
                     help='number of epochs to train (default: 10)')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='disables CUDA training')
@@ -84,37 +84,38 @@ val_loader_clean = torch.utils.data.DataLoader(val_data_clean, batch_size=args.b
 val_loader_clean_aug = torch.utils.data.DataLoader(val_data_clean_aug, batch_size=args.batch_size, shuffle=True, **kwargs)
 #--------------------------------------------------------------------
 
+
 #---------------------------prepare data for finetune--------------------------------
 test_data_finetune = list(test_data)
 #for idx, _ in enumerate(test_data_finetune):
 #    L1 = list(test_data_finetune[idx])
 #    L1.append(1)
 #    test_data_finetune[idx] = tuple(L1)
-    
-    
 listofones_1 = [1] * 2
 split_list_1 = [int(element * 0.5*len(test_data_finetune)) for element in listofones_1]
 test_data_split = torch.utils.data.random_split(test_data_finetune, split_list_1, generator=torch.Generator().manual_seed(42))
-test_data_half = test_data_split[0]
+test_data_half = list(test_data_split[0])
 vertical_shift_range = np.arange(start=0.0,stop=1.0,step=0.1)
-listofones = [1] * 10
-split_list = [int(element * 0.1*len(test_data_half)) for element in listofones]
-test_data_aug_split = torch.utils.data.random_split(test_data_half, split_list, generator=torch.Generator().manual_seed(42))
-test_data_aug = []
-for idx, _ in enumerate(test_data_aug_split):
-    split_part = list(test_data_aug_split[idx])
-    for idx2, _ in enumerate(split_part):
-        #print(split_part[idx2][0].size())
+
+
+ft_data_aug = []
+for idx in range(0,10):
+    ft_data_aug_split = []
+    for idx2, _ in enumerate(test_data_half):
         shift_fn = transforms.RandomAffine(degrees=0,translate=(0.0,vertical_shift_range[idx]))
-        L1 = list(split_part[idx2])
+        L1 = list(test_data_half[idx2])
         L1[0] = shift_fn(L1[0])
         L1.append(1)
-        split_part[idx2] = tuple(L1)
-    test_data_aug = test_data_aug + split_part
-    
-finetune_data_train_test = train_data_clean + test_data_aug
-finetune_data_loader = torch.utils.data.DataLoader(test_data_aug, batch_size=args.batch_size, shuffle=True, **kwargs)
+        ft_data_aug_split.append(tuple(L1))
+    ft_data_aug = ft_data_aug + ft_data_aug_split
+ft_data = ft_data_aug + list(train_data_clean)
+#ft_data, ft_val_aug = torch.utils.data.random_split(ft_data, [int(0.95*len(ft_data)),int(0.05*len(ft_data))], generator=torch.Generator().manual_seed(42))
+ft_data, ft_val_aug = torch.utils.data.random_split(ft_data, [int(0.90*len(ft_data)),int(0.10*len(ft_data))], generator=torch.Generator().manual_seed(42))
+finetune_data_loader = torch.utils.data.DataLoader(ft_data, batch_size=args.batch_size, shuffle=True, **kwargs)
+finetune_val_loader = torch.utils.data.DataLoader(ft_val_aug,  batch_size=args.batch_size, shuffle=True, **kwargs)
+
 #--------------------------------------------------------------------
+
 
 
 
@@ -315,7 +316,25 @@ def train(epoch):
     print('====> Epoch: {} Average loss: {:.4f}'.format(
           epoch, average_loss))
     return average_loss
-
+def val_ft(epoch):
+    validation_loss = 0
+    with torch.no_grad():
+        for batch_id, (data,y,clean) in enumerate(finetune_val_loader):
+            ELBOx = True
+            if (data.size()[0] == args.batch_size):
+                data = data.to(device)
+                y = y.to(device)
+                clean = clean.to(device)
+                loss = loss_function_FT(data,y,clean,ELBOx)
+                validation_loss += loss.item()
+                ELBOx = False
+                loss = loss_function_FT(data,y,clean,ELBOx)
+                validation_loss += loss.item()
+    
+    average_loss = validation_loss / len(finetune_val_loader.dataset)
+    print('====> Epoch: {} Average validation loss: {:.4f}'.format(
+          epoch, average_loss))
+    return average_loss
 def val(epoch):
     if args.train_clean:
         dataloader = val_loader_clean
@@ -377,9 +396,11 @@ def loss_function_FT(x,y,test,ELBOx):
         #print(test*(1/num_test_data)*ELBO_x(x,model,device))
         if ELBOx:
             loss = torch.sum(test*(1/num_test_data)*ELBO_x(x,model,device))
+            #print('1' + str(loss))
             #ELBOx = False
         else:
             loss = torch.sum((1-test)*(1/num_clean_data)*ELBO_xy(x,y,model,device))
+            #print('2' + str(loss))
             #print('here2')
             #ELBOx = True
         #loss = torch.sum((1-test)*(1/num_clean_data)*ELBO_xy(x,y,model,device) + test*(1/num_test_data)*ELBO_x(x,model,device))
@@ -391,22 +412,11 @@ def loss_function_FT(x,y,test,ELBOx):
     #print(model)
     return -loss
 
-def finetune(epoch,ready):
-    
-    if not(ready):
-        for name, param in model.named_parameters():
-            #if name == ''
-            if (name in qmx) or (name in NNpM):
-                param.requires_grad = True
-            else:
-                param.requires_grad = False
-        print('ready')
-        ready = True
-    
+def finetune(epoch):
     model.train()
     FT_loss = 0 
     
-    for batch_id, (data,y,train) in enumerate(train_loader_clean_aug):
+    for batch_id, (data,y,train) in enumerate(finetune_data_loader):
     #for batch_id, (data,y,train) in enumerate(finetune_data_loader):
         ELBOx = True
         if (data.size()[0] == args.batch_size):
@@ -420,8 +430,8 @@ def finetune(epoch,ready):
             FT_loss += loss.item()
             loss_temp += loss.item()
             ELBOx = False
-            loss = loss_function_FT(data,y,train,ELBOx)
-            loss.backward()
+            #loss = loss_function_FT(data,y,train,ELBOx)
+            #loss.backward()
             """
             for param in model.parameters():
                 if param.requires_grad == True:
@@ -437,112 +447,97 @@ def finetune(epoch,ready):
 
             if batch_id  % args.log_interval == 0:
                 print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                    epoch, batch_id * len(data), len(train_loader_clean_aug.dataset),
-                    100. * batch_id / len(train_loader_clean_aug),
+                    epoch, batch_id * len(data), len(finetune_data_loader.dataset),
+                    100. * batch_id / len(finetune_data_loader),
                     loss_temp / len(data)))
-    average_loss = FT_loss / len(train_loader_clean_aug.dataset)
+    average_loss = FT_loss / len(finetune_data_loader.dataset)
     print('====> Epoch: {} Average loss: {:.4f}'.format(
         epoch,average_loss))
     return average_loss
 
 def test():
+    #-------------------------------------finetune-------------------------------------
     vertical_shift_range = np.arange(start=0.0,stop=1.0,step=0.1)
     if args.finetune:
-        ready = False
+        for name, param in model.named_parameters():
+            #if name == ''
+            if (name in qmx) or (name in NNpM):
+                param.requires_grad = True
+            else:
+                param.requires_grad = False
         ft_loss =[]
-        for epoch in range(1,1001):
-            finetune(epoch,ready)
-            ft_loss.append(finetune(epoch,ready))
-            s = '/media/hsy/DeepCAMA/ft_weights/TrainCleanEpoches' + str(epoch) + '.pt'
-            torch.save(model.state_dict(), s) 
+        val_loss = []
+        for epoch in range(1,2001):
+            ft_loss.append(finetune(epoch))
+            s = '/media/hsy/DeepCAMA/ft_weights_2/TrainCleanEpoches' + str(epoch) + '.pt'
+            val_loss.append(val_ft(epoch))
+            #torch.save(model.state_dict(), s) 
             ft_loss = np.array(ft_loss)
-            np.save('ft_loss.npy',ft_loss)
+            np.save('ft_loss_2_temp.npy',ft_loss)
             ft_loss = list(ft_loss)
+            
+            val_loss = np.array(val_loss)
+            np.save('val_loss_2_temp.npy',val_loss)
+            val_loss = list(val_loss)
 
-
+    #---------------------------------------test--------------------------------------
     model.eval()
     accuracy_list = [0]*vertical_shift_range.shape[0]
     index = 0
     with torch.no_grad():
-        for vsr in vertical_shift_range:
+        for vsr in range(0,10):
             temp = 0
             total_i = 0
-            for i, (data, y) in enumerate(test_loader):
+            s = '/media/hsy/DeepCAMA/data_loader/test_shift' + str(vsr) +'.pt'
+            test_data_shifted = torch.load(s)
+            test_loader = torch.utils.data.DataLoader(test_data_shifted,  batch_size=args.batch_size, shuffle=True, **kwargs)
+            for i, (data, y, dummy) in enumerate(test_loader):
                 print(i)
-                #if (data.size()[0] == args.batch_size): #resolve last batch issue later.
-                    #data, y = shift_image(x=data,y=y,width_shift_val=0.0,height_shift_val=vsr)
                 data = data.to(device)
-                #y = y.to(device)
-                data, y = shift_image(x=data,y=y,width_shift_val=0.0,height_shift_val=vsr)
                 y_pred = pred(data,model,device)
                 y_true = y.detach().cpu().numpy()
                 temp = temp + accuracy(y_true,y_pred)
                 total_i = total_i + 1
-                    #print(aa)
             print(temp/total_i)
             accuracy_list[index] = temp/total_i
             index = index + 1 
             print(temp/total_i)
     return accuracy_list
 
-model = DeepCAMA().to(device)
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#----------------------------------------------main-----------------------------------------------------#
+model = DeepCAMA().to(device)
 optimizer = optim.Adam(model.parameters(), lr=(1e-4+1e-5)/2)
 optimizer_FT = optim.Adam(model.parameters(), lr = 1e-4)
 if __name__ == "__main__":
-    #for name, param in model.named_parameters():
-    #    if param.requires_grad:
-    #        print(name)
-    for name, param in model.named_parameters():
-        #if name == ''
-        print(name)
-    """
-    for i, (data, y) in enumerate(test_loader):
-        #mu_q2, logvar_q2, m_sampled = model(x=data.to(device),phase=2)
-        #print(m_sampled.type())
-        data = data.to(device)
-        y = y.to(device)
-        ELBO_xym0_logterm(data,y,model,device)
-        break
-    """
-    #torch.autograd.set_detect_anomaly(True)
     if args.run: 
-        """
-        model.load_state_dict(torch.load('/media/hsy/DeepCAMA/TrainHor6.pt', map_location=device))
-        z_sample = model.reparameterize(torch.zeros(1).view(1,1),torch.zeros(1).view(1,1)).to(device)
-        m_sample = model.reparameterize(torch.zeros(1).view(1,1),torch.zeros(1).view(1,1)).to(device)
-        y = 3* torch.ones(1).to(torch.int64).to(device)
-        x_created = model.decode(model.onehot(y),z_sample,m_sample)
-        save_image(x_created.view(1,1,28,28),'created1.png')
-        
-        
-        
-        z_sample = model.reparameterize(torch.zeros(1).view(1,1),torch.zeros(1).view(1,1)).to(device)
-        m_sample = model.reparameterize(torch.zeros(1).view(1,1),torch.zeros(1).view(1,1)).to(device)
-        y = 3* torch.ones(1).to(torch.int64).to(device)
-        x_created = model.decode(model.onehot(y),z_sample,m_sample)
-        save_image(x_created.view(1,1,28,28),'created2.png')
-    
-        z_sample = model.reparameterize(torch.zeros(1).view(1,1),torch.zeros(1).view(1,1)).to(device)
-        m_sample = model.reparameterize(torch.zeros(1).view(1,1),torch.zeros(1).view(1,1)).to(device)
-        y = 3* torch.ones(1).to(torch.int64).to(device)
-        x_created = model.decode(model.onehot(y),z_sample,m_sample)
-        save_image(x_created.view(1,1,28,28),'created3.png')
-    
-        z_sample = model.reparameterize(torch.zeros(1).view(1,1),torch.zeros(1).view(1,1)).to(device)
-        m_sample = model.reparameterize(torch.zeros(1).view(1,1),torch.zeros(1).view(1,1)).to(device)
-        y = 3* torch.ones(1).to(torch.int64).to(device)
-        x_created = model.decode(model.onehot(y),z_sample,m_sample)
-        save_image(x_created.view(1,1,28,28),'created4.png')
-
-        z_sample = model.reparameterize(torch.zeros(1).view(1,1),torch.zeros(1).view(1,1)).to(device)
-        m_sample = model.reparameterize(torch.zeros(1).view(1,1),torch.zeros(1).view(1,1)).to(device)
-        y = 3* torch.ones(1).to(torch.int64).to(device)
-        x_created = model.decode(model.onehot(y),z_sample,m_sample)
-        save_image(x_created.view(1,1,28,28),'created5.png')
-        """
-
-
         if args.train:
             #model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight821.pt', map_location=device))
             loss_train_values = []
@@ -552,29 +547,32 @@ if __name__ == "__main__":
                     if phase == 'train':
                         model.train()
                         loss_train_values.append(train(epoch))
-                        
+                        if args.train_save:
+                            s = '/media/hsy/DeepCAMA/main2_weights/TrainCleanEpoches' + str(epoch) + '.pt'
+                            torch.save(model.state_dict(), s)                        
                     elif phase == 'val': 
                         model.eval()
                         loss_val_values.append(val(epoch))
-                    if epoch >=1 and epoch <= 1600:
-                        s = '/media/hsy/DeepCAMA/main2_trainVer_weights/TrainCleanEpoches' + str(epoch) + '.pt'
-                        torch.save(model.state_dict(), s)
-            if args.loss_plot_save:
-                loss_train_values = np.array(loss_train_values)
-                loss_val_values = np.array(loss_val_values)
-                np.save('main2_loss_train_values.npy',loss_train_values)
-                np.save('main2_loss_val_values.npy',loss_val_values)
+                    #if epoch >=1 and epoch <= 1600:
+
+                if args.loss_plot_save:
+                    loss_train_values = np.array(loss_train_values)
+                    loss_val_values = np.array(loss_val_values)
+                    np.save('/media/hsy/DeepCAMA/results/main2_loss_train_values.npy',loss_train_values)
+                    np.save('/media/hsy/DeepCAMA/results/main2_loss_val_values.npy',loss_val_values)
+                    loss_train_values = list(loss_train_values)
+                    loss_val_values = list(loss_val_values)
                         
-            if args.train_save:
-                torch.save(model.state_dict(), '/media/hsy/DeepCAMA/824.pt') 
         
         else:
-            model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weights/TrainCleanEpoches800.pt', map_location=device))
+            model.load_state_dict(torch.load('/media/hsy/DeepCAMA/main2_weights/TrainCleanEpoches650.pt', map_location=device))
+            #model.load_state_dict(torch.load('/media/hsy/DeepCAMA/ft_weights_2/TrainCleanEpoches1200.pt', map_location=device))
+            #model.load_state_dict(torch.load('/media/hsy/DeepCAMA/baseline.pt'))
             #model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight3_2.pt', map_location=device))
             model.eval()
             accuracy = test()
             print(accuracy)
-            #np.save('/media/hsy/DeepCAMA/results/TrainCleanEpoches800_TestVerWoFT.npy', accuracy)
+            #np.save('/media/hsy/DeepCAMA/results/ft_weights/Epoches300_test.npy', accuracy)
         
     #np.save('OurWoFineClean_weight3_2.npy', accuracy_list)
     #plt.plot(vertical_shift_range,accuracy_list)

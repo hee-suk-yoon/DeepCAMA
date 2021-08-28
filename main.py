@@ -518,7 +518,6 @@ if __name__ == "__main__":
         """
         
         if args.train:
-            #model.load_state_dict(torch.load('/media/hsy/DeepCAMA/weight821.pt', map_location=device))
             loss_train_values = []
             loss_val_values = []
             for epoch in range(1, args.epochs + 1):
